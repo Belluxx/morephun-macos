@@ -33,4 +33,7 @@ Video::Video()
 
 Video::~Video()
 {
+	SDL_DestroyRenderer(app.renderer);
+	SDL_DestroyWindow(app.window);
+	SDL_Quit();
 }

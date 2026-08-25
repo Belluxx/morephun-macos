@@ -9,7 +9,7 @@ void MophunOS::DbgPrintf()
 	const std::string& str = reinterpret_cast<char*>(mophunVM->getRamAddress(mophunVM->readReg(p0)));
 	std::stringstream ss;
 	uint32_t stackTmpPnt = mophunVM->readReg(sp);
-	for (int i = 0; i < str.size();)
+	for (size_t i = 0; i < str.size();)
 	{
 		if (str[i] == '%')
 		{

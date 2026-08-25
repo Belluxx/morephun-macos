@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+#include <string>
 #include "mophun_vm.h"
 #include "syscall/os_data.h"
 #include "video.h"
@@ -11,8 +13,8 @@ class MophunOS {
 	public:
 		MophunOS();
 		~MophunOS();
-		bool loadRom();
-		void emulate();
+		bool loadRom(const std::string& romPath);
+		void emulate(uint64_t maxInstructions = 0);
 
 	private:
 		MophunVM* mophunVM = new MophunVM();

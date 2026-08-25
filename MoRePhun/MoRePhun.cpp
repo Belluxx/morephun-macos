@@ -1,21 +1,50 @@
 #define SDL_MAIN_HANDLED
-#include <stdio.h>
+#include <cstdint>
+#include <exception>
+#include <iostream>
+#include <limits>
+#include <string>
 #include "mophun_os.h"
 
 
-int main()
+int main(int argc, char* argv[])
 {
-	MophunOS* mophunOS = new MophunOS();
-	if (!mophunOS->loadRom())
+	if (argc < 2 || argc > 3)
 	{
-		return 0;
+		std::cerr << "Usage: " << argv[0] << " <rom.mpn> [max-instructions]" << std::endl;
+		return 2;
 	}
-	mophunOS->emulate();
 
-	delete mophunOS;
+	uint64_t maxInstructions = 0;
+	if (argc == 3)
+	{
+		try
+		{
+			size_t parsedCharacters = 0;
+			maxInstructions = std::stoull(argv[2], &parsedCharacters);
+			if (parsedCharacters != std::string(argv[2]).size())
+				throw std::invalid_argument("trailing characters");
+		}
+		catch (const std::exception&)
+		{
+			std::cerr << "Invalid instruction limit: " << argv[2] << std::endl;
+			return 2;
+		}
+	}
 
-	std::cout << "Execution ended. Press enter to quit." << std::endl;
-	std::getchar();
+	try
+	{
+		MophunOS mophunOS;
+		if (!mophunOS.loadRom(argv[1]))
+			return 1;
+
+		mophunOS.emulate(maxInstructions);
+	}
+	catch (const std::exception& error)
+	{
+		std::cerr << "Fatal error: " << error.what() << std::endl;
+		return 1;
+	}
+
     return 0;
 }
-

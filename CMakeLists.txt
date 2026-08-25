@@ -1,11 +1,13 @@
 cmake_minimum_required(VERSION 3.18)
 
-project(MoRePhun)
+project(MoRePhun LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-include(${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
-conan_basic_setup(NO_OUTPUT_DIRS)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
 
 # MoRePhun
 file(GLOB_RECURSE MOREPHUN_SOURCES MoRePhun/*.cpp)
@@ -17,4 +19,6 @@ SET(HEADERS ${MOREPHUN_HEADERS})
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 
-target_link_libraries(${PROJECT_NAME} ${CONAN_LIBS})
+target_link_libraries(${PROJECT_NAME} PRIVATE PkgConfig::SDL2)
+
+add_executable(MPNInspect tools/mpn_inspect.cpp)

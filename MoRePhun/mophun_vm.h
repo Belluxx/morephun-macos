@@ -24,7 +24,7 @@ class MophunVM {
 		uint8_t* getRamAddress(uint32_t offset);
 		std::vector<PoolData>* getPoolEntries();
 	private:
-		VMGPHeader* pRomHeader;
+		VMGPHeader romHeader;
 		Memory memory;
 		std::unordered_map<unsigned char, uint32_t> registers;
 		std::vector<PoolData> poolDataList;

@@ -16,8 +16,10 @@ PoolData MophunVM::decodePoolItem(uint32_t index)
 			*reinterpret_cast<uint32_t*>(std::addressof(memory.ram[memory.dataSegStartAddr + poolItem.extra])) += memory.dataSegStartAddr;
 		else if (poolItem.segmentoffset == 1)
 			*reinterpret_cast<uint32_t*>(std::addressof(memory.ram[memory.dataSegStartAddr + poolItem.extra])) += memory.codeSegStartAddr;
+		else if (poolItem.segmentoffset == 4)
+			*reinterpret_cast<uint32_t*>(std::addressof(memory.ram[memory.dataSegStartAddr + poolItem.extra])) += memory.bssSegStartAddr;
 		else
-			throw std::runtime_error("!!! Pool handler error !!!");
+			throw std::runtime_error("Unsupported relocation segment " + std::to_string(poolItem.segmentoffset));
 	}
 	else if (poolItem.segment_1 == 0x8)
 	{
@@ -57,7 +59,6 @@ void MophunVM::poolParser()
 	poolDataList.resize(totalPoolItems);
 	for (int i = 0; i < totalPoolItems; i++)
 	{
-		const auto& poolItem = reinterpret_cast<PoolItem*>(memory.ram.data() + memory.poolSegStartAddr)[i];
 		poolDataList[i] = decodePoolItem(i);
 	}
 }

@@ -26,7 +26,6 @@ void MophunOS::vClearScreen()
 void MophunOS::vFlipScreen()
 {
 	// FIXME TODO: check vblank
-	uint32_t block = mophunVM->readReg(p0);
 	SDL_RenderPresent(video->app.renderer);
 }
 
@@ -56,7 +55,7 @@ void MophunOS::vSpriteInit()
 
 void MophunOS::vSpriteClear()
 {
-	for (int i=0; i<osdata.spriteSlots.size(); i++)
+	for (size_t i = 0; i < osdata.spriteSlots.size(); i++)
 	{
 		SDL_DestroyTexture(osdata.spriteSlots[i].spriteTexture);
 	}
@@ -143,7 +142,7 @@ void MophunOS::vPrint()
 	
 	while (*str != '\0')
 	{
-		uint8_t currChar = charTbl[*str];
+		uint8_t currChar = charTbl[static_cast<uint8_t>(*str)];
 		int pixelIndex = 0;
 
 		for (int i = 0; i < bytesPerChar; ++i)

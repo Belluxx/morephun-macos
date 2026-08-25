@@ -33,12 +33,8 @@ MophunOS::MophunOS()
 
 MophunOS::~MophunOS()
 {
-	delete mophunVM;
-	delete video;
-	delete input;
-
 	// Clean sprites
-	for (int i = 0; i < osdata.spriteSlots.size(); i++)
+	for (size_t i = 0; i < osdata.spriteSlots.size(); i++)
 	{
 		SDL_DestroyTexture(osdata.spriteSlots[i].spriteTexture);
 	}
@@ -49,30 +45,46 @@ MophunOS::~MophunOS()
 		if (it->second.fd != nullptr)
 			fclose(it->second.fd);
 	}
+
+	delete mophunVM;
+	delete video;
+	delete input;
 }
 
-bool MophunOS::loadRom()
+bool MophunOS::loadRom(const std::string& romPath)
 {
-	if (mophunVM->loadRom("load.mpn"))
+	if (mophunVM->loadRom(romPath))
 	{
-		std::cout << "Rom loaded!" << std::endl;
+		std::cout << "ROM loaded: " << romPath << std::endl;
 	}
 	else {
-		std::cout << "Rom not found or invalid magic no." << std::endl;
-		std::getchar();
+		std::cerr << "Unable to load ROM: " << romPath << std::endl;
 		return false;
 	}
 	return true;
 }
 
-void MophunOS::emulate()
+void MophunOS::emulate(uint64_t maxInstructions)
 {
 	setupSyscalls();
-	while (status)
+	uint64_t executedInstructions = 0;
+	while (status && (maxInstructions == 0 || executedInstructions < maxInstructions))
 	{
-		SDL_PollEvent(NULL);
+		SDL_Event event;
+		while (SDL_PollEvent(&event))
+		{
+			if (event.type == SDL_QUIT)
+				status = false;
+		}
+		if (!status)
+			break;
+
 		mophunVM->emulate();
+		executedInstructions++;
 	}
+
+	if (status && maxInstructions != 0 && executedInstructions == maxInstructions)
+		std::cout << "Instruction limit reached: " << executedInstructions << std::endl;
 }
 
 void MophunOS::setupSyscalls()
@@ -90,7 +102,11 @@ void MophunOS::setupSyscalls()
 		auto iter = syscalls.find(syscall);
 		if (iter == syscalls.end())
 		{
-			std::cout << "unimplmented syscall: " << syscall << std::endl;
+			std::cout << "Unimplemented syscall: " << syscall << std::endl;
+			poolData.fun = [this, syscall]() {
+				std::cerr << "Stopping at unsupported syscall: " << syscall << std::endl;
+				status = false;
+			};
 			continue;
 		}
 
