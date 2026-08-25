@@ -84,6 +84,8 @@ MophunOS::~MophunOS()
 	{
 		if (it->second.fd != nullptr)
 			fclose(it->second.fd);
+		if (it->second.deleteOnClose && !it->second.path.empty())
+			std::remove(it->second.path.c_str());
 	}
 
 	delete mophunVM;
@@ -97,6 +99,8 @@ bool MophunOS::loadRom(const std::string& romPath)
 	if (mophunVM->loadRom(romPath))
 	{
 		std::cout << "ROM loaded: " << romPath << std::endl;
+		storage.mountPacksNextTo(romPath);
+		std::cout << "Save directory: " << storage.getSaveDirectory() << std::endl;
 	}
 	else {
 		std::cerr << "Unable to load ROM: " << romPath << std::endl;

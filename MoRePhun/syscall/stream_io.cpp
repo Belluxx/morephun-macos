@@ -3,7 +3,48 @@
 #include "stream_io.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cstring>
+#include <cstdlib>
+#include <iostream>
+
+namespace {
+
+FILE* openGuestFile(const std::string& path, uint32_t mode)
+{
+	const bool read = (mode & STREAM_READ) != 0;
+	const bool write = (mode & STREAM_WRITE) != 0;
+	const bool binary = (mode & STREAM_BINARY) != 0;
+	const bool create = (mode & STREAM_CREATE) != 0;
+	const bool truncate = (mode & STREAM_TRUNC) != 0;
+	const bool exclusive = (mode & STREAM_EXCL) != 0;
+	const char* readMode = binary ? "rb" : "r";
+	const char* updateMode = binary ? "r+b" : "r+";
+	const char* createMode = read && write
+		? (binary ? "w+b" : "w+") : (binary ? "wb" : "w");
+
+	if (!write)
+		return read ? fopen(path.c_str(), readMode) : nullptr;
+	if (exclusive && create)
+	{
+		FILE* existing = fopen(path.c_str(), readMode);
+		if (existing != nullptr)
+		{
+			fclose(existing);
+			errno = EEXIST;
+			return nullptr;
+		}
+	}
+	if (truncate)
+		return fopen(path.c_str(), createMode);
+
+	FILE* file = fopen(path.c_str(), updateMode);
+	if (file == nullptr && create)
+		file = fopen(path.c_str(), createMode);
+	return file;
+}
+
+} // namespace
 
 void MophunOS::vStreamOpen()
 {
@@ -29,18 +70,34 @@ void MophunOS::vStreamOpen()
 	}
 	else if ((mode & 0xffU) == STREAM_FILE && nameAddress != 0)
 	{
-		const char* name = reinterpret_cast<const char*>(mophunVM->getRamAddress(nameAddress));
+		const std::string name = reinterpret_cast<const char*>(mophunVM->getRamAddress(nameAddress));
 		const bool read = (mode & STREAM_READ) != 0;
 		const bool write = (mode & STREAM_WRITE) != 0;
-		const bool binary = (mode & STREAM_BINARY) != 0;
-		const char* fileMode = read && write ? (binary ? "r+b" : "r+")
-			: write ? (binary ? "wb" : "w") : (binary ? "rb" : "r");
-		streamSlot.fd = fopen(name, fileMode);
-		if (streamSlot.fd == nullptr)
+		bool resolved = false;
+		if (write)
+			resolved = storage.resolveWritePath(name, streamSlot.path);
+		else if (read)
+			resolved = storage.resolveReadPath(name, streamSlot.path, streamSlot.mountedPack);
+		if (!resolved)
 		{
 			mophunVM->writeReg(r0, static_cast<uint32_t>(-1));
 			return;
 		}
+
+		streamSlot.fd = openGuestFile(streamSlot.path, mode);
+		if (streamSlot.fd == nullptr)
+		{
+			if (std::getenv("MOPHUN_TRACE_FILES") != nullptr)
+				std::cerr << "Unable to open guest file '" << name << "' at "
+					<< streamSlot.path << std::endl;
+			mophunVM->writeReg(r0, static_cast<uint32_t>(-1));
+			return;
+		}
+		streamSlot.deleteOnClose = write && (mode & STREAM_DELETE) != 0;
+		if (std::getenv("MOPHUN_TRACE_FILES") != nullptr)
+			std::cout << "Opened guest file '" << name << "' from "
+				<< (streamSlot.mountedPack ? "mounted MPC " : "save storage ")
+				<< streamSlot.path << std::endl;
 	}
 	else
 	{
@@ -61,6 +118,8 @@ void MophunOS::vStreamClose()
 		return;
 	if (stream->second.fd != nullptr)
 		fclose(stream->second.fd);
+	if (stream->second.deleteOnClose && !stream->second.path.empty())
+		std::remove(stream->second.path.c_str());
 	osdata.streamSlots.erase(stream);
 }
 

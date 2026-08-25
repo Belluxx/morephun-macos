@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <string>
 
 #define STREAM_FILE 0
 #define STREAM_TCP 1
@@ -37,4 +38,7 @@ struct StreamSlot {
 	uint32_t size = 0;
 	uint32_t position = 0;
 	uint32_t mode = 0;
+	std::string path;
+	bool deleteOnClose = false;
+	bool mountedPack = false;
 };

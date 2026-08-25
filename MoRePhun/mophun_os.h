@@ -5,6 +5,7 @@
 #include "mophun_vm.h"
 #include "audio.h"
 #include "syscall/os_data.h"
+#include "storage.h"
 #include "video.h"
 #include "input.h"
 
@@ -23,6 +24,7 @@ class MophunOS {
 		Input* input = new Input();
 		Audio* audio = new Audio();
 		OSData osdata;
+		Storage storage;
 		bool status;
 		void setupSyscalls();
 

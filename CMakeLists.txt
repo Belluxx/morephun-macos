@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.18)
 
 project(MoRePhun LANGUAGES CXX)
 
+include(CTest)
+
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -37,3 +39,13 @@ if(APPLE)
 endif()
 
 add_executable(MPNInspect tools/mpn_inspect.cpp)
+
+if(BUILD_TESTING)
+	add_executable(StorageTests
+		tests/storage_tests.cpp
+		MoRePhun/storage.cpp
+		MoRePhun/storage.h)
+	target_include_directories(StorageTests PRIVATE MoRePhun)
+	target_link_libraries(StorageTests PRIVATE PkgConfig::SDL2)
+	add_test(NAME StorageTests COMMAND StorageTests)
+endif()
