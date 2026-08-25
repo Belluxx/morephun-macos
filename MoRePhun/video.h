@@ -1,8 +1,9 @@
 #pragma once
 #include <SDL.h>
 
-#define SCREEN_WIDTH 640
-#define SCREEN_HEIGHT 480
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 160
+#define WINDOW_SCALE 3
 
 struct Renderer{
 	SDL_Renderer *renderer;

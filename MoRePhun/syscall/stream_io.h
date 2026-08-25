@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstdint>
+#include <cstdio>
+
 #define STREAM_FILE 0
 #define STREAM_TCP 1
 #define STREAM_UDP 2
@@ -28,5 +31,10 @@
 
 
 struct StreamSlot {
-	FILE* fd;
+	FILE* fd = nullptr;
+	bool resource = false;
+	uint32_t resourceAddress = 0;
+	uint32_t size = 0;
+	uint32_t position = 0;
+	uint32_t mode = 0;
 };

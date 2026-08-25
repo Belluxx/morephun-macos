@@ -1,5 +1,7 @@
 #include "mophun_os.h"
+#include "registers.h"
 #include <chrono>
+#include <cstdlib>
 
 MophunOS::MophunOS()
 {
@@ -8,14 +10,33 @@ MophunOS::MophunOS()
 	osdata.streamCounter = 0;
 
 	syscalls["DbgPrintf"] = std::bind(&MophunOS::DbgPrintf, this);
+	syscalls["vCheckDataCert"] = std::bind(&MophunOS::vCheckDataCert, this);
+	syscalls["vCheckIMEI"] = std::bind(&MophunOS::vCheckIMEI, this);
 	syscalls["vClearScreen"] = std::bind(&MophunOS::vClearScreen, this);
+	syscalls["vDecompress"] = std::bind(&MophunOS::vDecompress, this);
+	syscalls["vDrawFlatPolygon"] = std::bind(&MophunOS::vDrawFlatPolygon, this);
+	syscalls["vDrawLine"] = std::bind(&MophunOS::vDrawLine, this);
+	syscalls["vDrawObject"] = std::bind(&MophunOS::vDrawObject, this);
+	syscalls["vFillRect"] = std::bind(&MophunOS::vFillRect, this);
 	syscalls["vFlipScreen"] = std::bind(&MophunOS::vFlipScreen, this);
 	syscalls["vGetButtonData"] = std::bind(&MophunOS::vGetButtonData, this);
+	syscalls["vGetCaps"] = std::bind(&MophunOS::vGetCaps, this);
+	syscalls["vGetPaletteEntry"] = std::bind(&MophunOS::vGetPaletteEntry, this);
 	syscalls["vGetRandom"] = std::bind(&MophunOS::vGetRandom, this);
 	syscalls["vGetTickCount"] = std::bind(&MophunOS::vGetTickCount, this);
+	syscalls["vMapInit"] = std::bind(&MophunOS::vMapInit, this);
+	syscalls["vGetTimeDate"] = std::bind(&MophunOS::vGetTimeDate, this);
 	syscalls["vPrint"] = std::bind(&MophunOS::vPrint, this);
+	syscalls["vMsgBox"] = std::bind(&MophunOS::vMsgBox, this);
+	syscalls["vMsgBoxU"] = std::bind(&MophunOS::vMsgBoxU, this);
+	syscalls["vPlayResource"] = std::bind(&MophunOS::vPlayResource, this);
+	syscalls["vSelectFont"] = std::bind(&MophunOS::vSelectFont, this);
 	syscalls["vSetActiveFont"] = std::bind(&MophunOS::vSetActiveFont, this);
 	syscalls["vSetForeColor"] = std::bind(&MophunOS::vSetForeColor, this);
+	syscalls["vSetClipWindow"] = std::bind(&MophunOS::vSetClipWindow, this);
+	syscalls["vSetPaletteEntry"] = std::bind(&MophunOS::vSetPaletteEntry, this);
+	syscalls["vSetRandom"] = std::bind(&MophunOS::vSetRandom, this);
+	syscalls["vSetTransferMode"] = std::bind(&MophunOS::vSetTransferMode, this);
 	syscalls["vSpriteClear"] = std::bind(&MophunOS::vSpriteClear, this);
 	syscalls["vSpriteCollision"] = std::bind(&MophunOS::vSpriteCollision, this);
 	syscalls["vSpriteInit"] = std::bind(&MophunOS::vSpriteInit, this);
@@ -25,9 +46,19 @@ MophunOS::MophunOS()
 	syscalls["vStreamClose"] = std::bind(&MophunOS::vStreamClose, this);
 	syscalls["vStreamOpen"] = std::bind(&MophunOS::vStreamOpen, this);
 	syscalls["vStreamRead"] = std::bind(&MophunOS::vStreamRead, this);
+	syscalls["vStreamReady"] = std::bind(&MophunOS::vStreamReady, this);
+	syscalls["vStreamSeek"] = std::bind(&MophunOS::vStreamSeek, this);
 	syscalls["vStreamWrite"] = std::bind(&MophunOS::vStreamWrite, this);
+	syscalls["vSysCtl"] = std::bind(&MophunOS::vSysCtl, this);
 	syscalls["vTerminateVMGP"] = std::bind(&MophunOS::vTerminateVMGP, this);
+	syscalls["vTextExtent"] = std::bind(&MophunOS::vTextExtent, this);
+	syscalls["vTextExtentU"] = std::bind(&MophunOS::vTextExtentU, this);
+	syscalls["vTextOut"] = std::bind(&MophunOS::vTextOut, this);
+	syscalls["vTextOutU"] = std::bind(&MophunOS::vTextOutU, this);
+	syscalls["vUID"] = std::bind(&MophunOS::vUID, this);
+	syscalls["vUpdateMap"] = std::bind(&MophunOS::vUpdateMap, this);
 	syscalls["vUpdateSprite"] = std::bind(&MophunOS::vUpdateSprite, this);
+	syscalls["vitoa"] = std::bind(&MophunOS::vitoa, this);
 }
 
 
@@ -90,6 +121,7 @@ void MophunOS::emulate(uint64_t maxInstructions)
 void MophunOS::setupSyscalls()
 {
 	std::vector<PoolData>* poolDataList = mophunVM->getPoolEntries();
+	const bool traceSyscalls = std::getenv("MOPHUN_TRACE_SYSCALLS") != nullptr;
 
 	for (PoolData &poolData: *poolDataList)
 	{
@@ -110,6 +142,15 @@ void MophunOS::setupSyscalls()
 			continue;
 		}
 
-		poolData.fun = iter->second;
+		const std::function<void()> implementation = iter->second;
+		poolData.fun = [this, syscall, implementation, traceSyscalls]() {
+			if (traceSyscalls && syscall != "vGetTickCount" && syscall != "vGetButtonData")
+			{
+				std::cout << syscall << "(0x" << std::hex << mophunVM->readReg(p0)
+					<< ", 0x" << mophunVM->readReg(p1) << ", 0x" << mophunVM->readReg(p2)
+					<< ", 0x" << mophunVM->readReg(p3) << ")" << std::dec << std::endl;
+			}
+			implementation();
+		};
 	}
 }

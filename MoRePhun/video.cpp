@@ -12,7 +12,8 @@ Video::Video()
 		exit(1);
 	}
 
-	app.window = SDL_CreateWindow("MoRePhun", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, windowFlags);
+	app.window = SDL_CreateWindow("V-Rally 2 — MoRePhun", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+		SCREEN_WIDTH * WINDOW_SCALE, SCREEN_HEIGHT * WINDOW_SCALE, windowFlags);
 
 	if (!app.window)
 	{
@@ -23,12 +24,17 @@ Video::Video()
 	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
 
 	app.renderer = SDL_CreateRenderer(app.window, -1, rendererFlags);
+	if (!app.renderer)
+		app.renderer = SDL_CreateRenderer(app.window, -1, SDL_RENDERER_SOFTWARE);
 
 	if (!app.renderer)
 	{
 		std::cout << "Failed to create renderer: " << SDL_GetError() << std::endl;
 		exit(1);
 	}
+
+	SDL_RenderSetLogicalSize(app.renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
+	SDL_RenderSetIntegerScale(app.renderer, SDL_TRUE);
 }
 
 Video::~Video()

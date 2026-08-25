@@ -40,13 +40,33 @@ struct SPRITE {
 	int16_t centery;
 	uint16_t width;
 	uint16_t height;
-	uint8_t* data;
 };
 #pragma pack(pop)
+static_assert(sizeof(SPRITE) == 10, "Invalid Mophun sprite header size");
+
+#pragma pack(push, 1)
+struct MAPHEADER {
+	uint8_t flag;
+	uint8_t format;
+	uint8_t mapWidth;
+	uint8_t mapHeight;
+	uint8_t animationSpeed;
+	uint8_t animationCount;
+	uint8_t animationActive;
+	uint8_t pad;
+	int16_t xPan;
+	int16_t yPan;
+	int16_t xPos;
+	int16_t yPos;
+	uint32_t mapData;
+	uint32_t tileSpriteData;
+};
+#pragma pack(pop)
+static_assert(sizeof(MAPHEADER) == 24, "Invalid Mophun map header size");
 
 struct SpriteSlot {
-	SPRITE* spriteData;
-	SDL_Texture* spriteTexture;
-	int32_t x;
-	int32_t y;
+	SPRITE* spriteData = nullptr;
+	SDL_Texture* spriteTexture = nullptr;
+	int32_t x = 0;
+	int32_t y = 0;
 };

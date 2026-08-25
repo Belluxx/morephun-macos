@@ -4,6 +4,7 @@
 #include <cstring>
 #include "mophun_vm.h"
 #include "opcodes.h"
+#include "rom_decrypt.h"
 #include "vmgp_header.h"
 
 
@@ -49,21 +50,38 @@ bool MophunVM::loadRom(const std::string& romPath)
 			return false;
 		}
 
-		const uint64_t opcodeSlots = romHeader.codeSize / sizeof(uint32_t);
-		uint64_t knownOpcodeSlots = 0;
-		for (uint64_t offset = sizeof(VMGPHeader);
-			offset + sizeof(uint32_t) <= sizeof(VMGPHeader) + romHeader.codeSize;
-			offset += sizeof(uint32_t))
+		auto knownOpcodePercentage = [this]() {
+			const uint64_t opcodeSlots = romHeader.codeSize / sizeof(uint32_t);
+			uint64_t knownOpcodeSlots = 0;
+			for (uint64_t offset = sizeof(VMGPHeader);
+				offset + sizeof(uint32_t) <= sizeof(VMGPHeader) + romHeader.codeSize;
+				offset += sizeof(uint32_t))
+			{
+				knownOpcodeSlots += memory.ram[offset] <= LDHUi;
+			}
+			return opcodeSlots == 0 ? uint64_t{0} : knownOpcodeSlots * 100 / opcodeSlots;
+		};
+
+		uint64_t opcodePercentage = knownOpcodePercentage();
+		if (romHeader.codeSize != 0 && opcodePercentage < 60)
 		{
-			knownOpcodeSlots += memory.ram[offset] <= LDHUi;
-		}
-		if (opcodeSlots != 0 && knownOpcodeSlots * 100 < opcodeSlots * 60)
-		{
-			std::cerr << "ROM code appears encrypted (only "
-				<< knownOpcodeSlots * 100 / opcodeSlots
-				<< "% of aligned words begin with a known opcode); decrypt a working copy first"
-				<< std::endl;
-			return false;
+			std::string decryptError;
+			if (!decryptCommercialCode(memory.ram, romHeader, decryptError))
+			{
+				std::cerr << "ROM code appears encrypted and could not be decrypted: "
+					<< decryptError << std::endl;
+				return false;
+			}
+			opcodePercentage = knownOpcodePercentage();
+			if (opcodePercentage < 60)
+			{
+				std::cerr << "Decrypted ROM code failed validation (only "
+					<< opcodePercentage << "% of aligned words begin with a known opcode)"
+					<< std::endl;
+				return false;
+			}
+			std::cout << "Decrypted commercial code in memory (opcode score "
+				<< opcodePercentage << "%)" << std::endl;
 		}
 
 		memory.codeSegStartAddr = sizeof(VMGPHeader);

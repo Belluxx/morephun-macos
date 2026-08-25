@@ -22,6 +22,8 @@ class MophunVM {
 		void writeReg(uint32_t reg, uint32_t val);
 		uint8_t readRam(uint32_t offset);
 		uint8_t* getRamAddress(uint32_t offset);
+		uint32_t getResourceAddress(uint32_t index) const;
+		uint32_t getResourceSize(uint32_t index) const;
 		std::vector<PoolData>* getPoolEntries();
 	private:
 		VMGPHeader romHeader;
