@@ -1,5 +1,7 @@
 # MoRePhun (macOS)
 
+TLDR: Follow intructions below to play [V-Rally2](https://www.youtube.com/watch?v=X85Sj3bQvDs&themeRe) on your Mac!
+
 I recently found my old Sony Ericsson T630 and was surprised to see it still fully working. I immediately tried V-Rally 2, as I used to play it all day long as a kid, and was amazed by how well designed it was for the time. I wanted to play it on my Mac.
 
 This is a continuation of the great work by Luca1991: [MoRePhun](https://github.com/Luca1991/MoRePhun).
