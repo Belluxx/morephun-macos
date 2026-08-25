@@ -8,6 +8,15 @@ MophunOS::MophunOS()
 	status = true;
 	osdata.timer = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 	osdata.streamCounter = 0;
+	// The T610 starts with an identity RGB332 palette. Games can replace any
+	// entry later with vSetPaletteEntry.
+	for (uint32_t index = 0; index < osdata.palette.size(); ++index)
+	{
+		const uint16_t red = static_cast<uint16_t>(((index >> 5) & 7U) * 31U / 7U);
+		const uint16_t green = static_cast<uint16_t>(((index >> 2) & 7U) * 31U / 7U);
+		const uint16_t blue = static_cast<uint16_t>((index & 3U) * 31U / 3U);
+		osdata.palette[index] = static_cast<uint16_t>((red << 10) | (green << 5) | blue);
+	}
 
 	syscalls["DbgPrintf"] = std::bind(&MophunOS::DbgPrintf, this);
 	syscalls["vCheckDataCert"] = std::bind(&MophunOS::vCheckDataCert, this);

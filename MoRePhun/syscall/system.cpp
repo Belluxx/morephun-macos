@@ -315,7 +315,8 @@ void MophunOS::vGetCaps()
 	{
 		case video:
 			writeU16(caps + 0, 8);
-			writeU16(caps + 2, 0x3000);
+			// Orientation + 3D capability bits, with the T610 RGB332 format.
+			writeU16(caps + 2, 0x3007);
 			writeU16(caps + 4, screenWidth);
 			writeU16(caps + 6, screenHeight);
 			break;

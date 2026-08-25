@@ -19,6 +19,7 @@ struct OSData {
 	std::vector<SpriteSlot> spriteSlots;
 	VMGPFONT* currentFont = nullptr;
 	VMGPFONT* previousFont = nullptr;
+	uint32_t currentFontAddress = 0;
 	std::unordered_map<uint32_t, StreamSlot> streamSlots;
 	uint32_t streamCounter;
 };

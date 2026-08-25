@@ -1,10 +1,8 @@
 #include "../mophun_os.h"
 #include "../registers.h"
-#include <bitset>
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
-#include <vector>
 
 namespace {
 
@@ -13,6 +11,15 @@ void rgb555(uint16_t color, uint8_t& red, uint8_t& green, uint8_t& blue)
 	red = static_cast<uint8_t>(((color >> 10) & 0x1f) * 255 / 31);
 	green = static_cast<uint8_t>(((color >> 5) & 0x1f) * 255 / 31);
 	blue = static_cast<uint8_t>((color & 0x1f) * 255 / 31);
+}
+
+void resolveColor(uint32_t color, const OSData& osdata, uint8_t& red, uint8_t& green,
+	uint8_t& blue)
+{
+	const uint16_t rgb = (color & 0x80000000U) != 0
+		? static_cast<uint16_t>(color)
+		: osdata.palette[color & 0xffU];
+	rgb555(rgb, red, green, blue);
 }
 
 uint8_t spriteBitsPerPixel(uint8_t format)
@@ -143,20 +150,9 @@ void drawSystemCharacter(SDL_Renderer* renderer, int x, int y, char character)
 
 void MophunOS::vClearScreen()
 {
-	int32_t color = static_cast<int32_t>(mophunVM->readReg(p0));
+	const uint32_t color = mophunVM->readReg(p0);
 	uint8_t rgb[3];
-	if (color & (1 << 31))
-	{
-		rgb[0] = (color & 0x7C00) >> 7;
-		rgb[1] = (color & 0x3E0) >> 2;
-		rgb[2] = (color & 0x1f) << 3;
-	}
-	else
-	{
-		rgb[0] = ((color >> 5) & 0x7) << 5;
-		rgb[1] = ((color >> 2) & 0x7) << 5;
-		rgb[2] = ((color >> 0) & 0x3) << 6;
-	}
+	resolveColor(color, osdata, rgb[0], rgb[1], rgb[2]);
 	SDL_SetRenderDrawColor(video->app.renderer, rgb[0], rgb[1], rgb[2], 255);
 	SDL_RenderClear(video->app.renderer);
 }
@@ -164,24 +160,7 @@ void MophunOS::vClearScreen()
 
 void MophunOS::vFlipScreen()
 {
-	const char* screenshotPath = std::getenv("MOPHUN_SCREENSHOT");
-	if (screenshotPath != nullptr)
-	{
-		int outputWidth = 0;
-		int outputHeight = 0;
-		SDL_GetRendererOutputSize(video->app.renderer, &outputWidth, &outputHeight);
-		SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(0, outputWidth, outputHeight,
-			32, SDL_PIXELFORMAT_RGBA32);
-		if (surface != nullptr)
-		{
-			SDL_Rect frame = {0, 0, outputWidth, outputHeight};
-			if (SDL_RenderReadPixels(video->app.renderer, &frame, surface->format->format,
-				surface->pixels, surface->pitch) == 0)
-				SDL_SaveBMP(surface, screenshotPath);
-			SDL_FreeSurface(surface);
-		}
-	}
-	SDL_RenderPresent(video->app.renderer);
+	video->present(std::getenv("MOPHUN_SCREENSHOT"));
 }
 
 void MophunOS::vSetPaletteEntry()
@@ -200,7 +179,8 @@ void MophunOS::vSetClipWindow()
 	const int y0 = static_cast<int16_t>(mophunVM->readReg(p1));
 	const int x1 = static_cast<int16_t>(mophunVM->readReg(p2));
 	const int y1 = static_cast<int16_t>(mophunVM->readReg(p3));
-	SDL_Rect clip = {x0, y0, std::max(0, x1 - x0), std::max(0, y1 - y0)};
+	// Mophun's lower-right clip coordinate is inclusive.
+	SDL_Rect clip = {x0, y0, std::max(0, x1 - x0 + 1), std::max(0, y1 - y0 + 1)};
 	SDL_RenderSetClipRect(video->app.renderer, &clip);
 }
 
@@ -213,13 +193,17 @@ void MophunOS::vSetTransferMode()
 
 void MophunOS::vFillRect()
 {
-	const int x0 = static_cast<int16_t>(mophunVM->readReg(p0));
-	const int y0 = static_cast<int16_t>(mophunVM->readReg(p1));
-	const int x1 = static_cast<int16_t>(mophunVM->readReg(p2));
-	const int y1 = static_cast<int16_t>(mophunVM->readReg(p3));
-	if (x1 <= x0 || y1 <= y0)
-		return;
-	SDL_Rect rectangle = {x0, y0, x1 - x0, y1 - y0};
+	int x0 = static_cast<int16_t>(mophunVM->readReg(p0));
+	int y0 = static_cast<int16_t>(mophunVM->readReg(p1));
+	int x1 = static_cast<int16_t>(mophunVM->readReg(p2));
+	int y1 = static_cast<int16_t>(mophunVM->readReg(p3));
+	// Real Mophun titles, including V-Rally 2, rely on the device runtime
+	// normalizing reversed corners when building projected scenery bands.
+	if (x1 < x0)
+		std::swap(x0, x1);
+	if (y1 < y0)
+		std::swap(y0, y1);
+	SDL_Rect rectangle = {x0, y0, x1 - x0 + 1, y1 - y0 + 1};
 	setForeground(video->app.renderer, osdata);
 	SDL_RenderFillRect(video->app.renderer, &rectangle);
 }
@@ -274,19 +258,8 @@ void MophunOS::vDrawObject()
 
 void MophunOS::vSetForeColor()
 {	
-	int32_t color = static_cast<int32_t>(mophunVM->readReg(p0));
-	if (color & (1 << 31))
-	{
-		osdata.currentFgColor[0] = (color & 0x7C00) >> 7;
-		osdata.currentFgColor[1] = (color & 0x3E0) >> 2;
-		osdata.currentFgColor[2] = (color & 0x1f) << 3;
-	}
-	else
-	{
-		osdata.currentFgColor[0] = ((color >> 5) & 0x7) << 5;
-		osdata.currentFgColor[1] = ((color >> 2) & 0x7) << 5;
-		osdata.currentFgColor[2] = ((color >> 0) & 0x3) << 6;
-	}
+	resolveColor(mophunVM->readReg(p0), osdata, osdata.currentFgColor[0],
+		osdata.currentFgColor[1], osdata.currentFgColor[2]);
 }
 
 void MophunOS::vSpriteInit()
@@ -341,10 +314,14 @@ void MophunOS::vUpdateSprite()
 
 void MophunOS::vSetActiveFont()
 {
-	VMGPFONT* pFont = reinterpret_cast<VMGPFONT*>(mophunVM->getRamAddress(mophunVM->readReg(p0)));
+	const uint32_t fontAddress = mophunVM->readReg(p0);
+	VMGPFONT* pFont = fontAddress == 0 ? nullptr
+		: reinterpret_cast<VMGPFONT*>(mophunVM->getRamAddress(fontAddress));
+	const uint32_t previousFontAddress = osdata.currentFontAddress;
 	osdata.previousFont = osdata.currentFont;
 	osdata.currentFont = pFont;
-	// FIXME return osdata.previousFont in r0
+	osdata.currentFontAddress = fontAddress;
+	mophunVM->writeReg(r0, previousFontAddress);
 }
 
 void MophunOS::vSelectFont()
@@ -404,63 +381,71 @@ void MophunOS::vTextOutU()
 
 void MophunOS::vPrint()
 {
-	int32_t mode = static_cast<int32_t>(mophunVM->readReg(p0));
-	int32_t x = static_cast<int32_t>(mophunVM->readReg(p1));
-	int32_t y = static_cast<int32_t>(mophunVM->readReg(p2));
+	const uint32_t mode = mophunVM->readReg(p0);
+	int32_t x = static_cast<int16_t>(mophunVM->readReg(p1));
+	const int32_t y = static_cast<int16_t>(mophunVM->readReg(p2));
 	const char* str = reinterpret_cast<char*>(mophunVM->getRamAddress(mophunVM->readReg(p3)));
-	if (mode != MODE_TRANS || osdata.currentFont->bpp != 1)
+	if (osdata.currentFont == nullptr || (osdata.currentFont->bpp != 1 && osdata.currentFont->bpp != 2))
 	{
-		std::cout << "unsupported vPrint mode: " << mode << "or bpp: " << osdata.currentFont->bpp << std::endl;
+		std::cout << "unsupported vPrint bpp: "
+			<< (osdata.currentFont == nullptr ? 0 : static_cast<int>(osdata.currentFont->bpp))
+			<< std::endl;
 		return;
 	}
 
-	uint8_t* fnt = mophunVM->getRamAddress(osdata.currentFont->fontdata);
-	uint8_t* charTbl = mophunVM->getRamAddress(osdata.currentFont->chartbl);
+	const uint8_t* const fnt = mophunVM->getRamAddress(osdata.currentFont->fontdata);
+	const uint8_t* const charTbl = mophunVM->getRamAddress(osdata.currentFont->chartbl);
+	const uint32_t bitsPerChar = static_cast<uint32_t>(osdata.currentFont->width) *
+		osdata.currentFont->height * osdata.currentFont->bpp;
+	const uint32_t bytesPerChar = (bitsPerChar + CHAR_BIT - 1) / CHAR_BIT;
+	const uint32_t pixelMask = (1U << osdata.currentFont->bpp) - 1U;
+	const bool transparent = (mode & MODE_TRANS) != 0;
 
-	int bitsPerChar = osdata.currentFont->width * osdata.currentFont->height * osdata.currentFont->bpp;
-	int bytesPerChar = bitsPerChar / CHAR_BIT;
-	std::vector<char> pixels;
-	pixels.resize(bitsPerChar);
-
-
-	uint8_t origRGBA[4];
+	uint8_t originalRGBA[4];
 	SDL_GetRenderDrawColor(video->app.renderer,
-		&origRGBA[0], &origRGBA[1], &origRGBA[2],
-		&origRGBA[3]);
-	
-	SDL_SetRenderDrawColor(video->app.renderer, osdata.currentFgColor[0], osdata.currentFgColor[1], osdata.currentFgColor[2], 255);
-	
+		&originalRGBA[0], &originalRGBA[1], &originalRGBA[2], &originalRGBA[3]);
+
 	while (*str != '\0')
 	{
-		uint8_t currChar = charTbl[static_cast<uint8_t>(*str)];
-		int pixelIndex = 0;
-
-		for (int i = 0; i < bytesPerChar; ++i)
+		const uint8_t characterIndex = charTbl[static_cast<uint8_t>(*str)];
+		if (characterIndex != 0xff)
 		{
-			uint8_t cur = fnt[currChar * bytesPerChar + i];
-			int offset = i * CHAR_BIT;
+			const uint8_t* const character = fnt + static_cast<uint32_t>(characterIndex) * bytesPerChar;
+			for (uint32_t row = 0; row < osdata.currentFont->height; ++row)
+			{
+				for (uint32_t column = 0; column < osdata.currentFont->width; ++column)
+				{
+					const uint32_t pixel = row * osdata.currentFont->width + column;
+					const uint32_t bitOffset = pixel * osdata.currentFont->bpp;
+					const uint32_t value = (character[bitOffset >> 3] >> (bitOffset & 7U)) & pixelMask;
+					if (transparent && value == 0)
+						continue;
 
-			for (int bit = 0; bit < CHAR_BIT; ++bit)
-			{
-				pixels[offset] = cur & 1;
-				++offset;
-				cur >>= 1;
-			}
-		}
-		
-		for (int yy = y; yy < y+osdata.currentFont->height; yy++)
-		{
-			for (int xx = x; xx < x+osdata.currentFont->width; xx++)
-			{
-				if (pixels[pixelIndex])
-					SDL_RenderDrawPoint(video->app.renderer, xx, yy);
-				pixelIndex += 1;
+					if (osdata.currentFont->bpp == 1)
+					{
+						if (value == 0)
+							SDL_SetRenderDrawColor(video->app.renderer, osdata.currentBgColor[0],
+								osdata.currentBgColor[1], osdata.currentBgColor[2], 255);
+						else
+							setForeground(video->app.renderer, osdata);
+					}
+					else
+					{
+						uint8_t red, green, blue;
+						rgb555(osdata.palette[(osdata.currentFont->palindex + value) & 0xffU],
+							red, green, blue);
+						SDL_SetRenderDrawColor(video->app.renderer, red, green, blue, 255);
+					}
+					SDL_RenderDrawPoint(video->app.renderer, x + static_cast<int32_t>(column),
+						y + static_cast<int32_t>(row));
+				}
 			}
 		}
 
 		x += osdata.currentFont->width;
-		str += 1;
+		++str;
 	}
 
-	SDL_SetRenderDrawColor(video->app.renderer, origRGBA[0], origRGBA[1], origRGBA[2], origRGBA[3]);
+	SDL_SetRenderDrawColor(video->app.renderer, originalRGBA[0], originalRGBA[1],
+		originalRGBA[2], originalRGBA[3]);
 }

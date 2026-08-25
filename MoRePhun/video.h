@@ -6,8 +6,9 @@
 #define WINDOW_SCALE 3
 
 struct Renderer{
-	SDL_Renderer *renderer;
-	SDL_Window *window;
+	SDL_Renderer *renderer = nullptr;
+	SDL_Window *window = nullptr;
+	SDL_Texture *framebuffer = nullptr;
 };
 
 
@@ -15,5 +16,6 @@ class Video {
 	public:
 		Video();
 		~Video();
+		void present(const char* screenshotPath);
 		Renderer app;
 };
