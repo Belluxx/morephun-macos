@@ -13,8 +13,10 @@ void MophunOS::vGetButtonData()
     if (keystate[input->keys[KEYRIGHT]])        pressedKeys += KEY_RIGHT;
     if (keystate[input->keys[KEYFIRE]])         pressedKeys += KEY_FIRE;
     if (keystate[input->keys[KEYFIRE2]])        pressedKeys += KEY_FIRE2;
-    if (keystate[input->keys[KEYSELECT]])       pressedKeys |= KEY_SE_JOYSTICK_PUSH;
-	if (keystate[SDL_SCANCODE_ESCAPE])           pressedKeys |= KEY_SELECT;
+    // V-Rally treats the phone's center/5 action as Fire. The Sony Ericsson
+    // implementation code 0xD6 is not a bit flag and would also set Down.
+    if (keystate[input->keys[KEYSELECT]])       pressedKeys |= KEY_FIRE;
+    if (keystate[SDL_SCANCODE_ESCAPE])           pressedKeys |= KEY_SELECT;
     if (keystate[input->keys[POINTERDOWN]])     pressedKeys += POINTER_DOWN;
     if (keystate[input->keys[POINTERALTDOWN]])  pressedKeys += POINTER_ALTDOWN;
 
