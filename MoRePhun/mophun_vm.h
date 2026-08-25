@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iostream>
+#include <cstddef>
 #include <cstdlib>
 #include <unordered_map>
 #include <functional>
@@ -17,6 +18,7 @@ class MophunVM {
 		MophunVM();
 		~MophunVM();
 		bool loadRom(const std::string& romPath);
+		bool loadRom(const uint8_t* romData, size_t romSize);
 		void emulate();
 		uint32_t readReg(uint32_t reg);
 		void writeReg(uint32_t reg, uint32_t val);

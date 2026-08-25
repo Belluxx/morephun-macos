@@ -2,10 +2,6 @@
 
 #include <array>
 #include <cstring>
-#include <limits>
-#include <memory>
-
-#include <openssl/bn.h>
 
 namespace {
 
@@ -128,13 +124,121 @@ uint32_t decryptBlock(uint32_t block, const uint32_t* key)
 		static_cast<uint32_t>(static_cast<uint16_t>(r3)) << 16;
 }
 
-struct BNDeleter {
-	void operator()(BIGNUM* value) const { BN_free(value); }
-};
+// The commercial metadata uses a fixed 1024-bit RSA operation with public
+// exponent 3. Keeping this tiny purpose-built unsigned integer here avoids a
+// runtime dependency on OpenSSL for one modular exponentiation at startup.
+using BigNumber = std::array<uint64_t, 16>;
 
-struct BNContextDeleter {
-	void operator()(BN_CTX* value) const { BN_CTX_free(value); }
-};
+BigNumber readBigNumber(const uint8_t* bytes)
+{
+	BigNumber value = {{0}};
+	for (size_t word = 0; word < value.size(); ++word)
+	{
+		for (size_t byte = 0; byte < sizeof(uint64_t); ++byte)
+			value[word] |= static_cast<uint64_t>(bytes[word * 8 + byte]) << (byte * 8);
+	}
+	return value;
+}
+
+void writeBigNumber(const BigNumber& value, uint8_t* bytes)
+{
+	for (size_t word = 0; word < value.size(); ++word)
+	{
+		for (size_t byte = 0; byte < sizeof(uint64_t); ++byte)
+			bytes[word * 8 + byte] = static_cast<uint8_t>(value[word] >> (byte * 8));
+	}
+}
+
+int compare(const BigNumber& left, const BigNumber& right)
+{
+	for (size_t index = left.size(); index-- > 0; )
+	{
+		if (left[index] < right[index])
+			return -1;
+		if (left[index] > right[index])
+			return 1;
+	}
+	return 0;
+}
+
+BigNumber subtract(const BigNumber& left, const BigNumber& right)
+{
+	BigNumber result = {{0}};
+	uint64_t borrow = 0;
+	for (size_t index = 0; index < result.size(); ++index)
+	{
+		const uint64_t subtrahend = right[index] + borrow;
+		const bool subtrahendOverflow = subtrahend < right[index];
+		result[index] = left[index] - subtrahend;
+		borrow = subtrahendOverflow || left[index] < subtrahend;
+	}
+	return result;
+}
+
+void addWithoutOverflow(BigNumber& left, const BigNumber& right)
+{
+	uint64_t carry = 0;
+	for (size_t index = 0; index < left.size(); ++index)
+	{
+		const uint64_t first = left[index] + right[index];
+		const bool firstCarry = first < left[index];
+		const uint64_t result = first + carry;
+		const bool secondCarry = result < first;
+		left[index] = result;
+		carry = firstCarry || secondCarry;
+	}
+}
+
+void addModulo(BigNumber& left, const BigNumber& right, const BigNumber& modulus)
+{
+	// Both values are below modulus. Comparing against modulus - right lets us
+	// perform the addition without ever overflowing the fixed 1024-bit value.
+	const BigNumber threshold = subtract(modulus, right);
+	if (compare(left, threshold) >= 0)
+		left = subtract(left, threshold);
+	else
+		addWithoutOverflow(left, right);
+}
+
+BigNumber reduceModulo(const BigNumber& value, const BigNumber& modulus)
+{
+	BigNumber result = {{0}};
+	const BigNumber one = {{1}};
+	for (size_t bit = value.size() * 64; bit-- > 0; )
+	{
+		const BigNumber doubled = result;
+		addModulo(result, doubled, modulus);
+		if ((value[bit / 64] & (uint64_t{1} << (bit % 64))) != 0)
+			addModulo(result, one, modulus);
+	}
+	return result;
+}
+
+BigNumber multiplyModulo(const BigNumber& left, const BigNumber& right,
+	const BigNumber& modulus)
+{
+	BigNumber result = {{0}};
+	BigNumber addend = reduceModulo(left, modulus);
+	for (size_t bit = 0; bit < right.size() * 64; ++bit)
+	{
+		if ((right[bit / 64] & (uint64_t{1} << (bit % 64))) != 0)
+			addModulo(result, addend, modulus);
+		const BigNumber doubled = addend;
+		addModulo(addend, doubled, modulus);
+	}
+	return result;
+}
+
+bool decryptRsaMetadata(const uint8_t* encryptedBytes, const uint8_t* modulusBytes,
+	uint8_t* decryptedBytes)
+{
+	const BigNumber modulus = readBigNumber(modulusBytes);
+	const BigNumber encrypted = reduceModulo(readBigNumber(encryptedBytes), modulus);
+	const BigNumber squared = multiplyModulo(encrypted, encrypted, modulus);
+	const BigNumber decrypted = multiplyModulo(squared, encrypted, modulus);
+	writeBigNumber(decrypted, decryptedBytes);
+	return true;
+}
 
 } // namespace
 
@@ -206,24 +310,10 @@ bool decryptCommercialCode(std::vector<uint8_t>& rom, const VMGPHeader& header, 
 	}
 
 	const uint8_t* modulusBytes = SonyEricssonKeys.data() + selector * 128;
-	std::unique_ptr<BIGNUM, BNDeleter> modulus(BN_lebin2bn(modulusBytes, 128, nullptr));
-	std::unique_ptr<BIGNUM, BNDeleter> encryptedMeta(BN_lebin2bn(meta.data(), 128, nullptr));
-	std::unique_ptr<BIGNUM, BNDeleter> exponent(BN_new());
-	std::unique_ptr<BIGNUM, BNDeleter> decrypted(BN_new());
-	std::unique_ptr<BN_CTX, BNContextDeleter> context(BN_CTX_new());
-	if (!modulus || !encryptedMeta || !exponent || !decrypted || !context ||
-		BN_set_word(exponent.get(), 3) != 1 ||
-		BN_mod_exp(decrypted.get(), encryptedMeta.get(), exponent.get(), modulus.get(), context.get()) != 1)
+	std::array<uint8_t, 128> decryptedMeta = {{0}};
+	if (!decryptRsaMetadata(meta.data(), modulusBytes, decryptedMeta.data()))
 	{
 		error = "RSA metadata decryption failed";
-		return false;
-	}
-
-	std::array<uint8_t, 128> decryptedMeta = {{0}};
-	if (BN_bn2lebinpad(decrypted.get(), decryptedMeta.data(), decryptedMeta.size()) !=
-		static_cast<int>(decryptedMeta.size()))
-	{
-		error = "RSA metadata result has an invalid size";
 		return false;
 	}
 	for (size_t index = 0x26; index < decryptedMeta.size(); ++index)

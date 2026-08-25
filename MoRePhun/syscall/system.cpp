@@ -135,30 +135,28 @@ void MophunOS::vDecompress()
 			return;
 		}
 		stream = &found->second;
-		if (stream->resource)
+		uint8_t header[22];
+		if (stream->read(header, sizeof(header), mophunVM->getRamAddress(0)) != sizeof(header))
 		{
-			compressed = mophunVM->getRamAddress(stream->resourceAddress + stream->position);
-			available = stream->size - stream->position;
+			mophunVM->writeReg(r0, static_cast<uint32_t>(-1));
+			return;
 		}
-		else
+		const uint32_t payloadSize = readU32(header + 8);
+		if (payloadSize > RAM_SIZE)
 		{
-			uint8_t header[22];
-			if (fread(header, 1, sizeof(header), stream->fd) != sizeof(header))
-			{
-				mophunVM->writeReg(r0, static_cast<uint32_t>(-1));
-				return;
-			}
-			const uint32_t payloadSize = readU32(header + 8);
-			fileData.resize(sizeof(header) + payloadSize);
-			std::memcpy(fileData.data(), header, sizeof(header));
-			if (fread(fileData.data() + sizeof(header), 1, payloadSize, stream->fd) != payloadSize)
-			{
-				mophunVM->writeReg(r0, static_cast<uint32_t>(-1));
-				return;
-			}
-			compressed = fileData.data();
-			available = static_cast<uint32_t>(fileData.size());
+			mophunVM->writeReg(r0, static_cast<uint32_t>(-1));
+			return;
 		}
+		fileData.resize(sizeof(header) + payloadSize);
+		std::memcpy(fileData.data(), header, sizeof(header));
+		if (stream->read(fileData.data() + sizeof(header), payloadSize,
+			mophunVM->getRamAddress(0)) != payloadSize)
+		{
+			mophunVM->writeReg(r0, static_cast<uint32_t>(-1));
+			return;
+		}
+		compressed = fileData.data();
+		available = static_cast<uint32_t>(fileData.size());
 	}
 
 	if (available < 22 || compressed[0] != 'L' || compressed[1] != 'Z')
@@ -180,8 +178,6 @@ void MophunOS::vDecompress()
 	const int result = decompressLz(compressed + 22, payloadSize,
 		mophunVM->getRamAddress(destinationAddress), destinationSize,
 		extendedOffsetBits, maxOffsetBits);
-	if (stream != nullptr && stream->resource && result >= 0)
-		stream->position += 22 + payloadSize;
 	mophunVM->writeReg(r0, static_cast<uint32_t>(result));
 }
 
@@ -260,18 +256,7 @@ void MophunOS::vPlayResource()
 
 		StreamSlot& stream = found->second;
 		streamData.resize(length);
-		if (stream.resource)
-		{
-			if (stream.position > stream.size || length > stream.size - stream.position)
-			{
-				mophunVM->writeReg(r0, 0);
-				return;
-			}
-			std::memcpy(streamData.data(),
-				mophunVM->getRamAddress(stream.resourceAddress + stream.position), length);
-			stream.position += length;
-		}
-		else if (stream.fd == nullptr || fread(streamData.data(), 1, length, stream.fd) != length)
+		if (stream.read(streamData.data(), length, mophunVM->getRamAddress(0)) != length)
 		{
 			mophunVM->writeReg(r0, 0);
 			return;

@@ -1,7 +1,9 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 #define STREAM_FILE 0
@@ -34,6 +36,7 @@
 struct StreamSlot {
 	FILE* fd = nullptr;
 	bool resource = false;
+	const uint8_t* embeddedData = nullptr;
 	uint32_t resourceAddress = 0;
 	uint32_t size = 0;
 	uint32_t position = 0;
@@ -41,4 +44,46 @@ struct StreamSlot {
 	std::string path;
 	bool deleteOnClose = false;
 	bool mountedPack = false;
+
+	bool memoryBacked() const
+	{
+		return resource || embeddedData != nullptr;
+	}
+
+	uint32_t read(void* destination, uint32_t requested, const uint8_t* guestMemory)
+	{
+		if (memoryBacked())
+		{
+			if (position > size || (resource && guestMemory == nullptr))
+				return 0;
+			const uint32_t count = std::min(requested, size - position);
+			const uint8_t* source = resource
+				? guestMemory + resourceAddress : embeddedData;
+			std::memcpy(destination, source + position, count);
+			position += count;
+			return count;
+		}
+		return fd == nullptr ? 0 : static_cast<uint32_t>(std::fread(destination, 1, requested, fd));
+	}
+
+	int64_t seek(int32_t offset, uint32_t origin)
+	{
+		if (memoryBacked())
+		{
+			int64_t newPosition = offset;
+			if (origin == 1)
+				newPosition += position;
+			else if (origin == 2)
+				newPosition += size;
+			newPosition = std::max<int64_t>(0, std::min<int64_t>(newPosition, size));
+			position = static_cast<uint32_t>(newPosition);
+			return position;
+		}
+		if (fd == nullptr)
+			return -1;
+		const int seekOrigin = origin == 1 ? SEEK_CUR : origin == 2 ? SEEK_END : SEEK_SET;
+		if (std::fseek(fd, offset, seekOrigin) != 0)
+			return -1;
+		return std::ftell(fd);
+	}
 };

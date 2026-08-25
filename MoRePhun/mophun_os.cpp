@@ -109,6 +109,24 @@ bool MophunOS::loadRom(const std::string& romPath)
 	return true;
 }
 
+bool MophunOS::loadEmbeddedRom(const uint8_t* romData, size_t romSize)
+{
+	if (!mophunVM->loadRom(romData, romSize))
+	{
+		std::cerr << "Unable to load the embedded V-Rally 2 ROM" << std::endl;
+		return false;
+	}
+	std::cout << "Loaded embedded V-Rally 2 ROM (" << romSize << " bytes)" << std::endl;
+	std::cout << "Save directory: " << storage.getSaveDirectory() << std::endl;
+	return true;
+}
+
+void MophunOS::mountEmbeddedPack(const std::string& fileName,
+	const std::string& logicalName, const uint8_t* data, size_t size)
+{
+	storage.mountEmbeddedPack(fileName, logicalName, data, size);
+}
+
 void MophunOS::emulate(uint64_t maxInstructions)
 {
 	setupSyscalls();

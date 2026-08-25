@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include "mophun_vm.h"
@@ -16,6 +17,9 @@ class MophunOS {
 		MophunOS();
 		~MophunOS();
 		bool loadRom(const std::string& romPath);
+		bool loadEmbeddedRom(const uint8_t* romData, size_t romSize);
+		void mountEmbeddedPack(const std::string& fileName, const std::string& logicalName,
+			const uint8_t* data, size_t size);
 		void emulate(uint64_t maxInstructions = 0);
 
 	private:

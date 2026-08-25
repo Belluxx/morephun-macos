@@ -96,31 +96,69 @@ void Storage::mountPacksNextTo(const std::string& romPath)
 		const std::string logicalName = separator == std::string::npos
 			? stem : stem.substr(separator + 1);
 
-		// Installed Mophun certificates are addressed by their logical name, not
-		// by the filename used to deliver the .mpc to a phone. Keep a few useful
-		// aliases so both original phone dumps and plainly named packs work.
-		mountedPacks.emplace(lowerCase(fileName), hostPath);
-		mountedPacks.emplace(lowerCase(stem), hostPath);
-		mountedPacks.emplace(lowerCase(logicalName), hostPath);
-		mountedPacks.emplace(lowerCase(logicalName + ".mpc"), hostPath);
+		MountedPack pack;
+		pack.path = hostPath;
+		addPackAliases(fileName, logicalName, pack);
 		std::cout << "Mounted MPC pack: " << logicalName << " (" << hostPath << ")" << std::endl;
 	}
+}
+
+void Storage::mountEmbeddedPack(const std::string& fileName, const std::string& logicalName,
+	const uint8_t* data, size_t size)
+{
+	if (data == nullptr || size == 0)
+		throw std::invalid_argument("An embedded MPC pack is empty");
+	MountedPack pack;
+	pack.data = data;
+	pack.size = size;
+	addPackAliases(fileName, logicalName, pack);
+	std::cout << "Mounted embedded MPC pack: " << logicalName << " (" << size
+		<< " bytes)" << std::endl;
+}
+
+void Storage::addPackAliases(const std::string& fileName, const std::string& logicalName,
+	const MountedPack& pack)
+{
+	const std::string stem = hasMpcExtension(fileName)
+		? fileName.substr(0, fileName.size() - 4) : fileName;
+
+	// Installed Mophun certificates are addressed by their logical name, not
+	// by the filename used to deliver the .mpc to a phone. Keep a few useful
+	// aliases so both original phone dumps and plainly named packs work.
+	mountedPacks.emplace(lowerCase(fileName), pack);
+	mountedPacks.emplace(lowerCase(stem), pack);
+	mountedPacks.emplace(lowerCase(logicalName), pack);
+	mountedPacks.emplace(lowerCase(logicalName + ".mpc"), pack);
+}
+
+bool Storage::resolveReadSource(const std::string& guestName, StorageReadSource& source) const
+{
+	const auto pack = mountedPacks.find(lowerCase(guestName));
+	if (pack != mountedPacks.end())
+	{
+		source.path = pack->second.path;
+		source.data = pack->second.data;
+		source.size = pack->second.size;
+		source.mountedPack = true;
+		return true;
+	}
+
+	source.path = joinPath(saveDirectory, encodeGuestName(guestName));
+	source.data = nullptr;
+	source.size = 0;
+	source.mountedPack = false;
+	return !guestName.empty();
 }
 
 bool Storage::resolveReadPath(const std::string& guestName, std::string& hostPath,
 	bool& mountedPack) const
 {
-	const auto pack = mountedPacks.find(lowerCase(guestName));
-	if (pack != mountedPacks.end())
-	{
-		hostPath = pack->second;
-		mountedPack = true;
-		return true;
-	}
-
-	hostPath = joinPath(saveDirectory, encodeGuestName(guestName));
-	mountedPack = false;
-	return !guestName.empty();
+	StorageReadSource source;
+	if (!resolveReadSource(guestName, source) || source.data != nullptr)
+		return false;
+	hostPath = source.path;
+	mountedPack = source.mountedPack;
+	return true;
 }
 
 bool Storage::resolveWritePath(const std::string& guestName, std::string& hostPath) const

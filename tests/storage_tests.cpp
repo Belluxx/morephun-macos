@@ -1,4 +1,5 @@
 #include "storage.h"
+#include "syscall/stream_io.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -70,6 +71,33 @@ int main()
 			"write path for mounted name did not resolve") && success;
 		success = require(path == saves + "/multipack",
 			"write path attempted to overwrite a mounted MPC") && success;
+	}
+
+	if (success)
+	{
+		Storage storage(saves);
+		const uint8_t embeddedPack[] = {0x4d, 0x50, 0x43, 0x00};
+		storage.mountEmbeddedPack("VRally2_embedded.mpc", "embedded",
+			embeddedPack, sizeof(embeddedPack));
+		StorageReadSource source;
+		success = require(storage.resolveReadSource("embedded", source),
+			"embedded MPC logical name was not resolved") && success;
+		success = require(source.mountedPack && source.data == embeddedPack &&
+			source.size == sizeof(embeddedPack) && source.path.empty(),
+			"embedded MPC source was resolved incorrectly") && success;
+		success = require(storage.resolveReadSource("VRALLY2_EMBEDDED.MPC", source),
+			"embedded MPC filename alias was not resolved") && success;
+
+		StreamSlot stream;
+		stream.embeddedData = source.data;
+		stream.size = static_cast<uint32_t>(source.size);
+		uint8_t buffer[3] = {0, 0, 0};
+		success = require(stream.read(buffer, sizeof(buffer), nullptr) == sizeof(buffer) &&
+			std::memcmp(buffer, embeddedPack, sizeof(buffer)) == 0,
+			"embedded MPC stream read failed") && success;
+		success = require(stream.seek(-2, 2) == 2 && stream.read(buffer, sizeof(buffer), nullptr) == 2 &&
+			buffer[0] == embeddedPack[2] && buffer[1] == embeddedPack[3],
+			"embedded MPC stream seek/read failed") && success;
 	}
 
 	std::remove(pack.c_str());

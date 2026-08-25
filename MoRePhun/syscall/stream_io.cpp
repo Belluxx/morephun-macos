@@ -77,15 +77,23 @@ void MophunOS::vStreamOpen()
 		if (write)
 			resolved = storage.resolveWritePath(name, streamSlot.path);
 		else if (read)
-			resolved = storage.resolveReadPath(name, streamSlot.path, streamSlot.mountedPack);
+		{
+			StorageReadSource source;
+			resolved = storage.resolveReadSource(name, source);
+			streamSlot.path = source.path;
+			streamSlot.mountedPack = source.mountedPack;
+			streamSlot.embeddedData = source.data;
+			streamSlot.size = static_cast<uint32_t>(source.size);
+		}
 		if (!resolved)
 		{
 			mophunVM->writeReg(r0, static_cast<uint32_t>(-1));
 			return;
 		}
 
-		streamSlot.fd = openGuestFile(streamSlot.path, mode);
-		if (streamSlot.fd == nullptr)
+		if (streamSlot.embeddedData == nullptr)
+			streamSlot.fd = openGuestFile(streamSlot.path, mode);
+		if (streamSlot.embeddedData == nullptr && streamSlot.fd == nullptr)
 		{
 			if (std::getenv("MOPHUN_TRACE_FILES") != nullptr)
 				std::cerr << "Unable to open guest file '" << name << "' at "
@@ -95,9 +103,15 @@ void MophunOS::vStreamOpen()
 		}
 		streamSlot.deleteOnClose = write && (mode & STREAM_DELETE) != 0;
 		if (std::getenv("MOPHUN_TRACE_FILES") != nullptr)
-			std::cout << "Opened guest file '" << name << "' from "
-				<< (streamSlot.mountedPack ? "mounted MPC " : "save storage ")
-				<< streamSlot.path << std::endl;
+		{
+			std::cout << "Opened guest file '" << name << "' from ";
+			if (streamSlot.embeddedData != nullptr)
+				std::cout << "embedded MPC data";
+			else
+				std::cout << (streamSlot.mountedPack ? "mounted MPC " : "save storage ")
+					<< streamSlot.path;
+			std::cout << std::endl;
+		}
 	}
 	else
 	{
@@ -135,17 +149,7 @@ void MophunOS::vStreamRead()
 
 	uint8_t* const buffer = mophunVM->getRamAddress(mophunVM->readReg(p1));
 	const uint32_t requested = mophunVM->readReg(p2);
-	uint32_t bytesRead = 0;
-	if (stream->second.resource)
-	{
-		bytesRead = std::min(requested, stream->second.size - stream->second.position);
-		std::memcpy(buffer, mophunVM->getRamAddress(stream->second.resourceAddress + stream->second.position), bytesRead);
-		stream->second.position += bytesRead;
-	}
-	else
-	{
-		bytesRead = static_cast<uint32_t>(fread(buffer, 1, requested, stream->second.fd));
-	}
+	const uint32_t bytesRead = stream->second.read(buffer, requested, mophunVM->getRamAddress(0));
 	mophunVM->writeReg(r0, bytesRead);
 }
 
@@ -169,32 +173,15 @@ void MophunOS::vStreamSeek()
 		return;
 	}
 
-	if (stream->second.resource)
-	{
-		int64_t newPosition = offset;
-		if (origin == 1)
-			newPosition += stream->second.position;
-		else if (origin == 2)
-			newPosition += stream->second.size;
-		newPosition = std::max<int64_t>(0, std::min<int64_t>(newPosition, stream->second.size));
-		stream->second.position = static_cast<uint32_t>(newPosition);
-		mophunVM->writeReg(r0, stream->second.position);
-	}
-	else
-	{
-		const int seekOrigin = origin == 1 ? SEEK_CUR : origin == 2 ? SEEK_END : SEEK_SET;
-		if (fseek(stream->second.fd, offset, seekOrigin) != 0)
-			mophunVM->writeReg(r0, static_cast<uint32_t>(-1));
-		else
-			mophunVM->writeReg(r0, static_cast<uint32_t>(ftell(stream->second.fd)));
-	}
+	mophunVM->writeReg(r0, static_cast<uint32_t>(stream->second.seek(offset, origin)));
 }
 
 void MophunOS::vStreamWrite()
 {
 	const uint32_t handle = mophunVM->readReg(p0);
 	auto stream = osdata.streamSlots.find(handle);
-	if (stream == osdata.streamSlots.end() || stream->second.resource || stream->second.fd == nullptr)
+	if (stream == osdata.streamSlots.end() || stream->second.resource ||
+		stream->second.embeddedData != nullptr || stream->second.fd == nullptr)
 	{
 		mophunVM->writeReg(r0, static_cast<uint32_t>(-1));
 		return;
