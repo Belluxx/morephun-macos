@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include "mophun_vm.h"
+#include "audio.h"
 #include "syscall/os_data.h"
 #include "video.h"
 #include "input.h"
@@ -20,6 +21,7 @@ class MophunOS {
 		MophunVM* mophunVM = new MophunVM();
 		Video* video = new Video();
 		Input* input = new Input();
+		Audio* audio = new Audio();
 		OSData osdata;
 		bool status;
 		void setupSyscalls();

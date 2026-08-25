@@ -22,4 +22,18 @@ add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 
 target_link_libraries(${PROJECT_NAME} PRIVATE PkgConfig::SDL2 PkgConfig::OPENSSL)
 
+if(APPLE)
+	find_library(AUDIOTOOLBOX_FRAMEWORK AudioToolbox REQUIRED)
+	find_library(COREFOUNDATION_FRAMEWORK CoreFoundation REQUIRED)
+	target_link_libraries(${PROJECT_NAME} PRIVATE
+		${AUDIOTOOLBOX_FRAMEWORK}
+		${COREFOUNDATION_FRAMEWORK})
+
+	add_executable(AudioProbe tools/audio_probe.cpp MoRePhun/audio.cpp MoRePhun/audio.h)
+	target_include_directories(AudioProbe PRIVATE MoRePhun)
+	target_link_libraries(AudioProbe PRIVATE
+		${AUDIOTOOLBOX_FRAMEWORK}
+		${COREFOUNDATION_FRAMEWORK})
+endif()
+
 add_executable(MPNInspect tools/mpn_inspect.cpp)

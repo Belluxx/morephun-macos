@@ -207,8 +207,95 @@ void MophunOS::vMsgBoxU()
 
 void MophunOS::vPlayResource()
 {
-	// Audio is not required for startup/menu interaction yet.
-	mophunVM->writeReg(r0, 1);
+	constexpr uint32_t soundTypeMask = 0xf;
+	constexpr uint32_t midi = 2;
+	constexpr uint32_t loop = 0x100;
+	constexpr uint32_t streamSource = 0x200;
+	constexpr uint32_t stop = 0x400;
+
+	const uint32_t sourceValue = mophunVM->readReg(p0);
+	const uint32_t length = mophunVM->readReg(p1);
+	const uint32_t flags = mophunVM->readReg(p2);
+	const bool trace = std::getenv("MOPHUN_TRACE_AUDIO") != nullptr;
+	if (trace)
+	{
+		std::cout << "vPlayResource(data=0x" << std::hex << sourceValue
+			<< ", length=0x" << length << ", flags=0x" << flags << ')'
+			<< std::dec << std::endl;
+	}
+
+	if ((flags & stop) != 0)
+	{
+		audio->stop();
+		mophunVM->writeReg(r0, 1);
+		return;
+	}
+
+	// Mophun permits one vPlayResource sound at a time. A new request stops
+	// the previous one even if the replacement resource later proves invalid.
+	audio->stop();
+	if ((flags & soundTypeMask) != midi)
+	{
+		std::cerr << "Unsupported vPlayResource sound type: "
+			<< (flags & soundTypeMask) << std::endl;
+		mophunVM->writeReg(r0, 0);
+		return;
+	}
+	if (length < 14 || length > RAM_SIZE)
+	{
+		mophunVM->writeReg(r0, 0);
+		return;
+	}
+
+	const uint8_t* source = nullptr;
+	std::vector<uint8_t> streamData;
+	if ((flags & streamSource) != 0)
+	{
+		auto found = osdata.streamSlots.find(sourceValue);
+		if (found == osdata.streamSlots.end())
+		{
+			mophunVM->writeReg(r0, 0);
+			return;
+		}
+
+		StreamSlot& stream = found->second;
+		streamData.resize(length);
+		if (stream.resource)
+		{
+			if (stream.position > stream.size || length > stream.size - stream.position)
+			{
+				mophunVM->writeReg(r0, 0);
+				return;
+			}
+			std::memcpy(streamData.data(),
+				mophunVM->getRamAddress(stream.resourceAddress + stream.position), length);
+			stream.position += length;
+		}
+		else if (stream.fd == nullptr || fread(streamData.data(), 1, length, stream.fd) != length)
+		{
+			mophunVM->writeReg(r0, 0);
+			return;
+		}
+		source = streamData.data();
+	}
+	else
+	{
+		if (sourceValue > RAM_SIZE || length > RAM_SIZE - sourceValue)
+		{
+			mophunVM->writeReg(r0, 0);
+			return;
+		}
+		source = mophunVM->getRamAddress(sourceValue);
+	}
+
+	std::string error;
+	const bool played = audio->playMidi(source, length, (flags & loop) != 0, error);
+	if (!played)
+		std::cerr << "MIDI playback failed: " << error << std::endl;
+	else if (trace)
+		std::cout << "MIDI playback started (" << length << " bytes, loop="
+			<< (((flags & loop) != 0) ? "yes" : "no") << ')' << std::endl;
+	mophunVM->writeReg(r0, played ? 1 : 0);
 }
 
 void MophunOS::vGetCaps()
@@ -239,7 +326,7 @@ void MophunOS::vGetCaps()
 			break;
 		case sound:
 			writeU16(caps + 0, 4);
-			writeU16(caps + 2, 0);
+			writeU16(caps + 2, audio->midiSupported() ? 0x8 : 0);
 			break;
 		case communication:
 			writeU16(caps + 0, 4);
