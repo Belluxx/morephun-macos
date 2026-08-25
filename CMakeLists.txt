@@ -8,6 +8,12 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(MOPHUN_BUILD_VRALLY2_STANDALONE
+	"Build a local macOS executable with user-supplied V-Rally 2 assets embedded"
+	OFF)
+set(MOPHUN_VRALLY2_ASSET_DIR "" CACHE PATH
+	"Directory containing V-Rally 2 MPN and MPC files")
+
 set(MOPHUN_STATIC_SDL2_ROOT "" CACHE PATH "Prefix containing a static SDL2 installation")
 if(MOPHUN_STATIC_SDL2_ROOT)
 	find_package(SDL2 REQUIRED CONFIG
@@ -42,17 +48,32 @@ if(APPLE)
 		${AUDIOTOOLBOX_FRAMEWORK}
 		${COREFOUNDATION_FRAMEWORK})
 
-	set(VRALLY_GAME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../gamefiles")
-	set(VRALLY_MPN "${VRALLY_GAME_DIR}/VRally2_[RC14EU]_[multiscreen]_M5.mpn")
+	add_executable(AudioProbe tools/audio_probe.cpp MoRePhun/audio.cpp MoRePhun/audio.h)
+	target_include_directories(AudioProbe PRIVATE MoRePhun)
+	target_link_libraries(AudioProbe PRIVATE
+		${AUDIOTOOLBOX_FRAMEWORK}
+		${COREFOUNDATION_FRAMEWORK})
+endif()
+
+if(MOPHUN_BUILD_VRALLY2_STANDALONE)
+	if(NOT APPLE)
+		message(FATAL_ERROR "The embedded V-Rally 2 target is supported only on macOS")
+	endif()
+	if(NOT IS_DIRECTORY "${MOPHUN_VRALLY2_ASSET_DIR}")
+		message(FATAL_ERROR
+			"Set MOPHUN_VRALLY2_ASSET_DIR to a directory containing the game files")
+	endif()
+
+	set(VRALLY_MPN "${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_[RC14EU]_[multiscreen]_M5.mpn")
 	set(VRALLY_PACKS
-		"${VRALLY_GAME_DIR}/VRally2_multipack.mpc"
-		"${VRALLY_GAME_DIR}/VRally2_extrapack1.mpc"
-		"${VRALLY_GAME_DIR}/VRally2_extrapack2.mpc"
-		"${VRALLY_GAME_DIR}/VRally2_extrapack3.mpc"
-		"${VRALLY_GAME_DIR}/VRally2_extrapack4.mpc")
+		"${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_multipack.mpc"
+		"${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack1.mpc"
+		"${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack2.mpc"
+		"${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack3.mpc"
+		"${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack4.mpc")
 	foreach(GAME_FILE IN LISTS VRALLY_MPN VRALLY_PACKS)
 		if(NOT EXISTS "${GAME_FILE}")
-			message(FATAL_ERROR "Required standalone game file is missing: ${GAME_FILE}")
+			message(FATAL_ERROR "Required local game file is missing: ${GAME_FILE}")
 		endif()
 	endforeach()
 
@@ -70,17 +91,11 @@ if(APPLE)
 		set_property(TARGET ${TARGET} APPEND PROPERTY LINK_DEPENDS "${FILE_PATH}")
 	endfunction()
 	embed_macho_section(VRally2Standalone __vr_mpn "${VRALLY_MPN}")
-	embed_macho_section(VRally2Standalone __vr_multi "${VRALLY_GAME_DIR}/VRally2_multipack.mpc")
-	embed_macho_section(VRally2Standalone __vr_extra1 "${VRALLY_GAME_DIR}/VRally2_extrapack1.mpc")
-	embed_macho_section(VRally2Standalone __vr_extra2 "${VRALLY_GAME_DIR}/VRally2_extrapack2.mpc")
-	embed_macho_section(VRally2Standalone __vr_extra3 "${VRALLY_GAME_DIR}/VRally2_extrapack3.mpc")
-	embed_macho_section(VRally2Standalone __vr_extra4 "${VRALLY_GAME_DIR}/VRally2_extrapack4.mpc")
-
-	add_executable(AudioProbe tools/audio_probe.cpp MoRePhun/audio.cpp MoRePhun/audio.h)
-	target_include_directories(AudioProbe PRIVATE MoRePhun)
-	target_link_libraries(AudioProbe PRIVATE
-		${AUDIOTOOLBOX_FRAMEWORK}
-		${COREFOUNDATION_FRAMEWORK})
+	embed_macho_section(VRally2Standalone __vr_multi "${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_multipack.mpc")
+	embed_macho_section(VRally2Standalone __vr_extra1 "${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack1.mpc")
+	embed_macho_section(VRally2Standalone __vr_extra2 "${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack2.mpc")
+	embed_macho_section(VRally2Standalone __vr_extra3 "${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack3.mpc")
+	embed_macho_section(VRally2Standalone __vr_extra4 "${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack4.mpc")
 endif()
 
 add_executable(MPNInspect tools/mpn_inspect.cpp)
