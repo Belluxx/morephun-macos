@@ -2,7 +2,16 @@ name: Linux
 
 on:
   push:
+    branches:
+      - main
   pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -19,14 +28,14 @@ jobs:
       CXX: ${{ matrix.compiler.cxx }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install dependencies
         run: >-
           sudo apt-get update &&
           sudo apt-get install --yes
           build-essential clang cmake pkg-config libsdl2-dev
-          libfluidsynth-dev fluid-soundfont-gm
+          libfluidsynth-dev
 
       - name: Configure
         run: >-

@@ -2,7 +2,16 @@ name: macOS
 
 on:
   push:
+    branches:
+      - main
   pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -13,10 +22,10 @@ jobs:
       CXX: clang++
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Install dependencies
-        run: brew install cmake pkg-config sdl2
+      - name: Install SDL2 compatibility layer
+        run: brew install sdl2-compat
 
       - name: Configure
         run: >-
