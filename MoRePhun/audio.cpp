@@ -1,6 +1,7 @@
 #include "audio.h"
 
 #include <cstdlib>
+#include <fstream>
 #include <limits>
 #include <sstream>
 
@@ -9,11 +10,21 @@
 #include <CoreFoundation/CoreFoundation.h>
 #endif
 
+#ifdef MOPHUN_HAVE_FLUIDSYNTH
+#include <fluidsynth.h>
+#endif
+
 struct Audio::Impl {
 #ifdef __APPLE__
 	MusicSequence sequence = nullptr;
 	MusicPlayer player = nullptr;
 	AUGraph graph = nullptr;
+#endif
+#ifdef MOPHUN_HAVE_FLUIDSYNTH
+	fluid_settings_t* settings = nullptr;
+	fluid_synth_t* synth = nullptr;
+	fluid_player_t* player = nullptr;
+	fluid_audio_driver_t* driver = nullptr;
 #endif
 };
 
@@ -100,6 +111,35 @@ bool configureLooping(MusicSequence sequence, std::string& error)
 }
 #endif
 
+#ifdef MOPHUN_HAVE_FLUIDSYNTH
+bool readableFile(const std::string& path)
+{
+	std::ifstream input(path, std::ios::binary);
+	return input.good();
+}
+
+std::string findSoundFont()
+{
+	const char* const overridePath = std::getenv("MOPHUN_SOUNDFONT");
+	if (overridePath != nullptr && overridePath[0] != '\0')
+		return readableFile(overridePath) ? overridePath : std::string();
+
+	const char* const candidates[] = {
+		"/usr/share/sounds/sf2/default-GM.sf2",
+		"/usr/share/sounds/sf2/FluidR3_GM.sf2",
+		"/usr/share/soundfonts/default.sf2",
+		"/usr/share/soundfonts/FluidR3_GM.sf2",
+		"/usr/local/share/soundfonts/default.sf2"
+	};
+	for (const char* candidate : candidates)
+	{
+		if (readableFile(candidate))
+			return candidate;
+	}
+	return std::string();
+}
+#endif
+
 } // namespace
 
 Audio::Audio() : impl(new Impl())
@@ -115,6 +155,8 @@ bool Audio::midiSupported() const
 {
 #ifdef __APPLE__
 	return std::getenv("MOPHUN_DISABLE_AUDIO") == nullptr;
+#elif defined(MOPHUN_HAVE_FLUIDSYNTH)
+	return std::getenv("MOPHUN_DISABLE_AUDIO") == nullptr && !findSoundFont().empty();
 #else
 	return false;
 #endif
@@ -125,11 +167,15 @@ bool Audio::playMidi(const uint8_t* data, size_t size, bool loop, std::string& e
 	stop();
 	error.clear();
 
-	if (!midiSupported())
+	if (std::getenv("MOPHUN_DISABLE_AUDIO") != nullptr)
 	{
-		error = "MIDI audio is disabled or unavailable on this platform";
+		error = "MIDI audio is disabled";
 		return false;
 	}
+#if !defined(__APPLE__) && !defined(MOPHUN_HAVE_FLUIDSYNTH)
+	error = "MIDI audio is unavailable on this platform";
+	return false;
+#endif
 	if (data == nullptr || size < 14)
 	{
 		error = "MIDI resource size is invalid";
@@ -216,6 +262,70 @@ bool Audio::playMidi(const uint8_t* data, size_t size, bool loop, std::string& e
 		return false;
 	}
 	return true;
+#elif defined(MOPHUN_HAVE_FLUIDSYNTH)
+	const std::string soundFont = findSoundFont();
+	if (soundFont.empty())
+	{
+		const char* const overridePath = std::getenv("MOPHUN_SOUNDFONT");
+		error = overridePath != nullptr && overridePath[0] != '\0'
+			? std::string("Unable to read SoundFont: ") + overridePath
+			: "No General MIDI SoundFont found; set MOPHUN_SOUNDFONT to an .sf2 file";
+		return false;
+	}
+
+	impl->settings = new_fluid_settings();
+	if (impl->settings == nullptr)
+	{
+		error = "Unable to create FluidSynth settings";
+		stop();
+		return false;
+	}
+	fluid_settings_setint(impl->settings, "player.reset-synth", 0);
+	const char* const audioDriver = std::getenv("MOPHUN_AUDIO_DRIVER");
+	if (audioDriver != nullptr && audioDriver[0] != '\0')
+		fluid_settings_setstr(impl->settings, "audio.driver", audioDriver);
+
+	impl->synth = new_fluid_synth(impl->settings);
+	if (impl->synth == nullptr)
+	{
+		error = "Unable to create the FluidSynth synthesizer";
+		stop();
+		return false;
+	}
+	if (fluid_synth_sfload(impl->synth, soundFont.c_str(), 1) == FLUID_FAILED)
+	{
+		error = "Unable to load SoundFont: " + soundFont;
+		stop();
+		return false;
+	}
+
+	impl->player = new_fluid_player(impl->synth);
+	if (impl->player == nullptr ||
+		fluid_player_add_mem(impl->player, data, size) == FLUID_FAILED)
+	{
+		error = "FluidSynth could not parse the MIDI resource";
+		stop();
+		return false;
+	}
+	if (loop)
+		fluid_player_set_loop(impl->player, -1);
+
+	// FluidSynth requires the audio driver to be created after every object it
+	// may access from its rendering thread.
+	impl->driver = new_fluid_audio_driver(impl->settings, impl->synth);
+	if (impl->driver == nullptr)
+	{
+		error = "Unable to open the FluidSynth audio output";
+		stop();
+		return false;
+	}
+	if (fluid_player_play(impl->player) == FLUID_FAILED)
+	{
+		error = "FluidSynth could not start MIDI playback";
+		stop();
+		return false;
+	}
+	return true;
 #else
 	(void)data;
 	(void)size;
@@ -250,6 +360,32 @@ void Audio::stop()
 	{
 		DisposeAUGraph(impl->graph);
 		impl->graph = nullptr;
+	}
+#endif
+#ifdef MOPHUN_HAVE_FLUIDSYNTH
+	if (impl->player != nullptr)
+		fluid_player_stop(impl->player);
+	// The audio driver owns the rendering thread, so it must be destroyed
+	// before the player and synthesizer it can access.
+	if (impl->driver != nullptr)
+	{
+		delete_fluid_audio_driver(impl->driver);
+		impl->driver = nullptr;
+	}
+	if (impl->player != nullptr)
+	{
+		delete_fluid_player(impl->player);
+		impl->player = nullptr;
+	}
+	if (impl->synth != nullptr)
+	{
+		delete_fluid_synth(impl->synth);
+		impl->synth = nullptr;
+	}
+	if (impl->settings != nullptr)
+	{
+		delete_fluid_settings(impl->settings);
+		impl->settings = nullptr;
 	}
 #endif
 }

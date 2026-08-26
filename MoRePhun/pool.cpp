@@ -5,21 +5,25 @@
 
 PoolData MophunVM::decodePoolItem(uint32_t index)
 {
-	const auto& poolItem = reinterpret_cast<PoolItem*>(memory.ram.data() + memory.poolSegStartAddr)[index];
+	const PoolItem poolItem = decodePoolItemBytes(memory.ram.data() + memory.poolSegStartAddr +
+		static_cast<size_t>(index) * PoolItemSize);
 	PoolData poolData;
 
 	if (poolItem.segment_1 == 0x4)
 	{
 		if(poolItem.segment_0 != 2)
 			throw std::runtime_error("!!! Pool handler error !!!");
+		uint8_t* const relocation = memory.ram.data() + memory.dataSegStartAddr + poolItem.extra;
+		uint32_t value = readLittleU32(relocation);
 		if (poolItem.segmentoffset == 2)
-			*reinterpret_cast<uint32_t*>(std::addressof(memory.ram[memory.dataSegStartAddr + poolItem.extra])) += memory.dataSegStartAddr;
+			value += memory.dataSegStartAddr;
 		else if (poolItem.segmentoffset == 1)
-			*reinterpret_cast<uint32_t*>(std::addressof(memory.ram[memory.dataSegStartAddr + poolItem.extra])) += memory.codeSegStartAddr;
+			value += memory.codeSegStartAddr;
 		else if (poolItem.segmentoffset == 4)
-			*reinterpret_cast<uint32_t*>(std::addressof(memory.ram[memory.dataSegStartAddr + poolItem.extra])) += memory.bssSegStartAddr;
+			value += memory.bssSegStartAddr;
 		else
 			throw std::runtime_error("Unsupported relocation segment " + std::to_string(poolItem.segmentoffset));
+		writeLittleU32(relocation, value);
 	}
 	else if (poolItem.segment_1 == 0x8)
 	{
@@ -55,7 +59,7 @@ PoolData MophunVM::decodePoolItem(uint32_t index)
 
 void MophunVM::poolParser()
 {
-	int totalPoolItems = (memory.stringSegStartAddr - memory.poolSegStartAddr) / sizeof(PoolItem);
+	int totalPoolItems = (memory.stringSegStartAddr - memory.poolSegStartAddr) / PoolItemSize;
 	poolDataList.resize(totalPoolItems);
 	for (int i = 0; i < totalPoolItems; i++)
 	{

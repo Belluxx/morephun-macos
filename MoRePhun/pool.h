@@ -1,14 +1,31 @@
 #pragma once
 
-#pragma pack(push, 1)
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+
+#include "binary_io.h"
+
+
+constexpr size_t PoolItemSize = 8;
+
 struct PoolItem {
-	unsigned segment_1 : 4;
-	unsigned segment_0 : 4;
-	unsigned segmentoffset : 24;
-	uint32_t extra;	
+	uint8_t segment_1;
+	uint8_t segment_0;
+	uint32_t segmentoffset;
+	uint32_t extra;
 };
-#pragma pack(pop)
-static_assert(sizeof(PoolItem) == 8, "Abnormal PoolItem element");
+
+inline PoolItem decodePoolItemBytes(const uint8_t* bytes)
+{
+	const uint32_t descriptor = readLittleU32(bytes);
+	return {
+		static_cast<uint8_t>(descriptor & 0xfU),
+		static_cast<uint8_t>((descriptor >> 4) & 0xfU),
+		descriptor >> 8,
+		readLittleU32(bytes + 4)
+	};
+}
 
 struct PoolData {
 	bool isSyscall = false;

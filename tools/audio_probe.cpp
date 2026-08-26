@@ -30,7 +30,7 @@ int main()
 		return 1;
 	}
 
-	std::cout << "Playing the looping Core Audio MIDI probe..." << std::endl;
+	std::cout << "Playing the looping host MIDI probe..." << std::endl;
 	std::this_thread::sleep_for(std::chrono::milliseconds(2500));
 	audio.stop();
 	std::cout << "Audio probe completed." << std::endl;

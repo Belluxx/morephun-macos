@@ -1,5 +1,7 @@
 #include "../mophun_os.h"
 #include "../registers.h"
+#include "../binary_io.h"
+#include <cstring>
 #include <sstream>
 
 void MophunOS::DbgPrintf()
@@ -26,13 +28,18 @@ void MophunOS::DbgPrintf()
 				ss << '%';
 				break;
 			case 'd':
-				ss << *reinterpret_cast<int32_t*>(mophunVM->getRamAddress(stackTmpPnt));
+				ss << static_cast<int32_t>(readLittleU32(mophunVM->getRamAddress(stackTmpPnt)));
 				stackTmpPnt += sizeof(uint32_t);
 				break;
 			case 'l':
 			case 'f':
 			{
-				ss << (*reinterpret_cast<double*>(mophunVM->getRamAddress(stackTmpPnt)));
+				const uint8_t* const bytes = mophunVM->getRamAddress(stackTmpPnt);
+				const uint64_t bits = static_cast<uint64_t>(readLittleU32(bytes)) |
+					static_cast<uint64_t>(readLittleU32(bytes + 4)) << 32;
+				double value = 0;
+				std::memcpy(&value, &bits, sizeof(value));
+				ss << value;
 				stackTmpPnt += sizeof(uint64_t);
 				break;
 			}
@@ -54,6 +61,6 @@ void MophunOS::DbgPrintf()
 
 std::string MophunOS::getStringFromMemory(uint32_t addr)
 {
-	uint32_t ref = *reinterpret_cast<uint32_t*>(mophunVM->getRamAddress(addr));
+	const uint32_t ref = readLittleU32(mophunVM->getRamAddress(addr));
 	return reinterpret_cast<char*>(mophunVM->getRamAddress(ref));
 }

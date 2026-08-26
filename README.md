@@ -1,4 +1,4 @@
-# MoRePhun (macOS)
+# MoRePhun (macOS + Linux)
 
 TLDR: Follow intructions below to play [V-Rally2](https://www.youtube.com/watch?v=X85Sj3bQvDs&themeRe) on your Mac!
 
@@ -45,6 +45,27 @@ Then run:
 ```
 
 The result is a single executable with the game data embedded in it.
+
+## Linux
+
+Linux should be supported too, but is currently untested. First install the required tools:
+
+```sh
+sudo apt update
+sudo apt install build-essential cmake pkg-config libsdl2-dev libfluidsynth-dev fluid-soundfont-gm
+```
+
+Then use the same game files listed above (from [My Abandonware](https://www.myabandonware.com/game/v-rally-2-yy1)):
+
+```sh
+# Compile the game
+./scripts/build-standalone-linux.sh /absolute/path/to/the/game/files
+
+# Run the game
+./dist/V-Rally-2
+```
+
+If your Linux distribution does not install a default MIDI SoundFont, run the game with `MOPHUN_SOUNDFONT=/absolute/path/to/a/general-midi.sf2`.
 
 ## Controls
 

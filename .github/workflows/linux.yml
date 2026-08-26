@@ -1,0 +1,62 @@
+name: Linux
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - { cc: gcc, cxx: g++ }
+          - { cc: clang, cxx: clang++ }
+
+    env:
+      CC: ${{ matrix.compiler.cc }}
+      CXX: ${{ matrix.compiler.cxx }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: >-
+          sudo apt-get update &&
+          sudo apt-get install --yes
+          build-essential clang cmake pkg-config libsdl2-dev
+          libfluidsynth-dev fluid-soundfont-gm
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build/ci
+          -DCMAKE_BUILD_TYPE=Release
+          -DMOPHUN_REQUIRE_FLUIDSYNTH=ON
+          -DBUILD_TESTING=ON
+
+      - name: Build
+        run: cmake --build build/ci --parallel
+
+      - name: Test
+        run: ctest --test-dir build/ci --output-on-failure
+
+      - name: Prepare standalone embedding fixtures
+        run: |
+          mkdir -p build/ci-assets
+          cp README.md 'build/ci-assets/VRally2_[RC14EU]_[multiscreen]_M5.mpn'
+          cp README.md build/ci-assets/VRally2_multipack.mpc
+          cp README.md build/ci-assets/VRally2_extrapack1.mpc
+          cp README.md build/ci-assets/VRally2_extrapack2.mpc
+          cp README.md build/ci-assets/VRally2_extrapack3.mpc
+          cp README.md build/ci-assets/VRally2_extrapack4.mpc
+
+      - name: Verify standalone Linux build
+        run: >-
+          cmake -S . -B build/ci-standalone
+          -DCMAKE_BUILD_TYPE=Release
+          -DMOPHUN_BUILD_VRALLY2_STANDALONE=ON
+          -DMOPHUN_VRALLY2_ASSET_DIR="$PWD/build/ci-assets"
+          -DMOPHUN_REQUIRE_FLUIDSYNTH=ON
+          -DBUILD_TESTING=OFF &&
+          cmake --build build/ci-standalone --target VRally2Standalone --parallel

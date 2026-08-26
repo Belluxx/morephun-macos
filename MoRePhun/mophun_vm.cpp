@@ -1,7 +1,7 @@
 #include "mophun_vm.h"
 #include "registers.h"
+#include "binary_io.h"
 
-#include <cstring>
 #include <stdexcept>
 
 
@@ -50,8 +50,7 @@ uint32_t MophunVM::getResourceAddress(uint32_t index) const
 		if (tableAddress + sizeof(uint32_t) > memory.resSegStartAddr + romHeader.resSize)
 			throw std::out_of_range("MPN resource index is out of range");
 
-		uint32_t relativeOffset = 0;
-		std::memcpy(&relativeOffset, memory.ram.data() + tableAddress, sizeof(relativeOffset));
+		const uint32_t relativeOffset = readLittleU32(memory.ram.data() + tableAddress);
 		if (relativeOffset == 0)
 			throw std::out_of_range("MPN resource index is out of range");
 		if (current == index)
@@ -63,8 +62,7 @@ uint32_t MophunVM::getResourceSize(uint32_t index) const
 {
 	const uint32_t start = getResourceAddress(index);
 	const uint32_t nextTableAddress = memory.resSegStartAddr + (index + 1) * sizeof(uint32_t);
-	uint32_t nextOffset = 0;
-	std::memcpy(&nextOffset, memory.ram.data() + nextTableAddress, sizeof(nextOffset));
+	const uint32_t nextOffset = readLittleU32(memory.ram.data() + nextTableAddress);
 	const uint32_t end = nextOffset == 0
 		? memory.resSegStartAddr + romHeader.resSize
 		: memory.resSegStartAddr + nextOffset;

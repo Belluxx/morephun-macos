@@ -1,13 +1,13 @@
-# MoRePhun macOS — V-Rally 2 compatibility
+# MoRePhun — V-Rally 2 compatibility
 
 An experimental continuation of [MoRePhun](https://github.com/Luca1991/MoRePhun),
-focused on running Mophun software on modern macOS. V-Rally 2 is the primary
+focused on running Mophun software on modern Linux and macOS. V-Rally 2 is the primary
 compatibility target.
 
 > [!IMPORTANT]
 > This repository contains emulator source code only. It does not contain V-Rally 2,
 > Mophun games, SDK files, certificates, ROMs, or other proprietary assets. You must
-> supply the files .
+> supply the files.
 
 This is an unofficial preservation and interoperability project. V-Rally, Mophun,
 and all associated names and assets belong to their respective owners. The project
@@ -15,7 +15,7 @@ is not affiliated with or endorsed by any rights holder.
 
 ## Current status
 
-On Apple Silicon macOS, the emulator can load a user-supplied V-Rally 2 MPN, mount
+On Linux and Apple Silicon macOS, the emulator can load a user-supplied V-Rally 2 MPN, mount
 sibling MPC expansion packs, and run through menus and races. Implemented work
 includes:
 
@@ -25,7 +25,7 @@ includes:
 - palette, sprite, tile-map, clipping, primitives, fonts, road geometry, HUD, and
   persistent-framebuffer rendering;
 - Sony Ericsson T610 capabilities and keyboard input;
-- MIDI playback through the macOS Core Audio DLS synthesizer;
+- MIDI playback through the macOS Core Audio DLS synthesizer or FluidSynth on Linux;
 - automatic sibling MPC mounting and isolated persistent guest storage;
 - bounded execution plus opt-in syscall, audio, file, and screenshot diagnostics.
 
@@ -34,15 +34,23 @@ outside the tested title still need work.
 
 ## Requirements
 
-The primary tested environment is an Apple Silicon Mac running macOS 11 or newer.
+The supported environments are Linux and Apple Silicon macOS 11 or newer.
 
 - CMake 3.18+
-- a C++14 compiler, normally Apple Clang
+- a C++14 compiler, such as GCC, Clang, or Apple Clang
 - SDL2
 - pkg-config
-- Xcode Command Line Tools
+- FluidSynth 2.0.5+ and a General MIDI SoundFont on Linux
+- Xcode Command Line Tools on macOS
 
-Install the Homebrew dependencies with:
+Install the Debian/Ubuntu dependencies with:
+
+```sh
+sudo apt install build-essential cmake pkg-config libsdl2-dev \
+  libfluidsynth-dev fluid-soundfont-gm
+```
+
+Install the Homebrew dependencies on macOS with:
 
 ```sh
 brew install cmake pkg-config sdl2
@@ -93,11 +101,19 @@ stored under the user's normal application-support directory. Set
 - `MOPHUN_DISABLE_AUDIO=1`: run silently
 - `MOPHUN_SCREENSHOT=/path/frame.bmp`: capture the latest presented frame
 
-The build also provides `MPNInspect`; macOS builds provide `AudioProbe`.
+The build also provides `MPNInspect`; builds with a host MIDI backend provide
+`AudioProbe`. Linux additionally supports `MOPHUN_SOUNDFONT=/path/to/file.sf2`
+and `MOPHUN_AUDIO_DRIVER=pulseaudio|alsa` overrides.
 
 ## Optional local standalone build
 
-On Apple Silicon, a local executable can embed user-supplied V-Rally 2 files:
+On Linux, a local executable can embed user-supplied V-Rally 2 files:
+
+```sh
+scripts/build-standalone-linux.sh /absolute/path/to/vrally2-assets
+```
+
+On Apple Silicon macOS, use:
 
 ```sh
 scripts/build-standalone-macos.sh /absolute/path/to/vrally2-assets

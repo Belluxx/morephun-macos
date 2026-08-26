@@ -42,7 +42,7 @@ bool MophunVM::loadRom(const uint8_t* romData, size_t romSize)
 
 	std::fill(memory.ram.begin(), memory.ram.end(), 0);
 	std::copy_n(romData, romSize, memory.ram.data());
-	std::memcpy(&romHeader, memory.ram.data(), sizeof(romHeader));
+	romHeader = decodeVMGPHeader(memory.ram.data());
 
 	if (std::string(romHeader.magicNo, 4) != "VMGP")
 		return false;
@@ -54,7 +54,7 @@ bool MophunVM::loadRom(const uint8_t* romData, size_t romSize)
 
 	const uint64_t fileLayoutSize = sizeof(VMGPHeader) +
 		static_cast<uint64_t>(romHeader.codeSize) + romHeader.dataSize + romHeader.resSize +
-		static_cast<uint64_t>(romHeader.poolSize) * sizeof(PoolItem) + romHeader.stringSize;
+		static_cast<uint64_t>(romHeader.poolSize) * PoolItemSize + romHeader.stringSize;
 	if (fileLayoutSize > romSize)
 	{
 		std::cerr << "ROM section sizes exceed the file size" << std::endl;
@@ -100,7 +100,7 @@ bool MophunVM::loadRom(const uint8_t* romData, size_t romSize)
 	memory.bssSegStartAddr = memory.dataSegStartAddr + romHeader.dataSize;
 	memory.resSegStartAddr = memory.bssSegStartAddr + romHeader.bssSize;
 	memory.poolSegStartAddr = memory.resSegStartAddr + romHeader.resSize;
-	memory.stringSegStartAddr = memory.poolSegStartAddr + (romHeader.poolSize * sizeof(PoolItem));
+	memory.stringSegStartAddr = memory.poolSegStartAddr + (romHeader.poolSize * PoolItemSize);
 	memory.heapStartAddr = memory.stringSegStartAddr + romHeader.stringSize;
 	memory.stackStartAddr = memory.ram.size() - romHeader.stackSize * 4;
 

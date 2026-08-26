@@ -9,10 +9,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(MOPHUN_BUILD_VRALLY2_STANDALONE
-	"Build a local macOS executable with user-supplied V-Rally 2 assets embedded"
+	"Build a local executable with user-supplied V-Rally 2 assets embedded"
 	OFF)
 set(MOPHUN_VRALLY2_ASSET_DIR "" CACHE PATH
 	"Directory containing V-Rally 2 MPN and MPC files")
+option(MOPHUN_ENABLE_FLUIDSYNTH "Enable FluidSynth MIDI playback on Linux" ON)
+option(MOPHUN_REQUIRE_FLUIDSYNTH
+	"Fail configuration when Linux MIDI support is unavailable" OFF)
 
 set(MOPHUN_STATIC_SDL2_ROOT "" CACHE PATH "Prefix containing a static SDL2 installation")
 if(MOPHUN_STATIC_SDL2_ROOT)
@@ -29,6 +32,44 @@ else()
 	set(MOPHUN_SDL_TARGET PkgConfig::SDL2)
 endif()
 
+set(MOPHUN_HAVE_FLUIDSYNTH OFF)
+if(APPLE)
+	find_library(AUDIOTOOLBOX_FRAMEWORK AudioToolbox REQUIRED)
+	find_library(COREFOUNDATION_FRAMEWORK CoreFoundation REQUIRED)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND MOPHUN_ENABLE_FLUIDSYNTH)
+	if(NOT PkgConfig_FOUND)
+		find_package(PkgConfig QUIET)
+	endif()
+	if(PkgConfig_FOUND)
+		pkg_check_modules(FLUIDSYNTH QUIET IMPORTED_TARGET fluidsynth>=2.0.5)
+	endif()
+	if(FLUIDSYNTH_FOUND)
+		set(MOPHUN_HAVE_FLUIDSYNTH ON)
+		message(STATUS "Linux MIDI playback enabled through FluidSynth")
+	elseif(MOPHUN_REQUIRE_FLUIDSYNTH)
+		message(FATAL_ERROR
+			"FluidSynth 2.0.5+ is required; install its development package or disable MOPHUN_REQUIRE_FLUIDSYNTH")
+	else()
+		message(WARNING
+			"FluidSynth 2.0.5+ was not found; Linux builds will run without MIDI audio")
+	endif()
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND MOPHUN_REQUIRE_FLUIDSYNTH)
+	message(FATAL_ERROR
+		"MOPHUN_REQUIRE_FLUIDSYNTH cannot be used when MOPHUN_ENABLE_FLUIDSYNTH is disabled")
+endif()
+
+function(configure_morephun_target TARGET)
+	target_link_libraries(${TARGET} PRIVATE ${MOPHUN_SDL_TARGET})
+	if(APPLE)
+		target_link_libraries(${TARGET} PRIVATE
+			${AUDIOTOOLBOX_FRAMEWORK}
+			${COREFOUNDATION_FRAMEWORK})
+	elseif(MOPHUN_HAVE_FLUIDSYNTH)
+		target_compile_definitions(${TARGET} PRIVATE MOPHUN_HAVE_FLUIDSYNTH=1)
+		target_link_libraries(${TARGET} PRIVATE PkgConfig::FLUIDSYNTH)
+	endif()
+endfunction()
+
 # MoRePhun
 file(GLOB_RECURSE MOREPHUN_SOURCES MoRePhun/*.cpp)
 file(GLOB_RECURSE MOREPHUN_HEADERS MoRePhun/*.h)
@@ -39,25 +80,24 @@ SET(HEADERS ${MOREPHUN_HEADERS})
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 
-target_link_libraries(${PROJECT_NAME} PRIVATE ${MOPHUN_SDL_TARGET})
+configure_morephun_target(${PROJECT_NAME})
 
 if(APPLE)
-	find_library(AUDIOTOOLBOX_FRAMEWORK AudioToolbox REQUIRED)
-	find_library(COREFOUNDATION_FRAMEWORK CoreFoundation REQUIRED)
-	target_link_libraries(${PROJECT_NAME} PRIVATE
-		${AUDIOTOOLBOX_FRAMEWORK}
-		${COREFOUNDATION_FRAMEWORK})
-
 	add_executable(AudioProbe tools/audio_probe.cpp MoRePhun/audio.cpp MoRePhun/audio.h)
 	target_include_directories(AudioProbe PRIVATE MoRePhun)
 	target_link_libraries(AudioProbe PRIVATE
 		${AUDIOTOOLBOX_FRAMEWORK}
 		${COREFOUNDATION_FRAMEWORK})
+elseif(MOPHUN_HAVE_FLUIDSYNTH)
+	add_executable(AudioProbe tools/audio_probe.cpp MoRePhun/audio.cpp MoRePhun/audio.h)
+	target_include_directories(AudioProbe PRIVATE MoRePhun)
+	target_compile_definitions(AudioProbe PRIVATE MOPHUN_HAVE_FLUIDSYNTH=1)
+	target_link_libraries(AudioProbe PRIVATE PkgConfig::FLUIDSYNTH)
 endif()
 
 if(MOPHUN_BUILD_VRALLY2_STANDALONE)
-	if(NOT APPLE)
-		message(FATAL_ERROR "The embedded V-Rally 2 target is supported only on macOS")
+	if(NOT APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+		message(FATAL_ERROR "The embedded V-Rally 2 target is supported only on macOS and Linux")
 	endif()
 	if(NOT IS_DIRECTORY "${MOPHUN_VRALLY2_ASSET_DIR}")
 		message(FATAL_ERROR
@@ -77,30 +117,54 @@ if(MOPHUN_BUILD_VRALLY2_STANDALONE)
 		endif()
 	endforeach()
 
-	add_executable(VRally2Standalone ${SOURCES} ${HEADERS})
+	set(STANDALONE_SOURCES ${SOURCES})
+	if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+		add_executable(AssetEmbedder tools/embed_assets.cpp)
+		set(GENERATED_ASSET_SOURCE
+			"${CMAKE_CURRENT_BINARY_DIR}/generated/vrally2_embedded_assets.cpp")
+		add_custom_command(
+			OUTPUT "${GENERATED_ASSET_SOURCE}"
+			COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+			COMMAND $<TARGET_FILE:AssetEmbedder>
+				"${GENERATED_ASSET_SOURCE}"
+				"${VRALLY_MPN}"
+				${VRALLY_PACKS}
+			DEPENDS AssetEmbedder "${VRALLY_MPN}" ${VRALLY_PACKS}
+			COMMENT "Embedding user-supplied V-Rally 2 assets"
+			VERBATIM)
+		list(REMOVE_ITEM STANDALONE_SOURCES
+			"${CMAKE_CURRENT_SOURCE_DIR}/MoRePhun/embedded_assets.cpp")
+		list(APPEND STANDALONE_SOURCES "${GENERATED_ASSET_SOURCE}")
+	endif()
+
+	add_executable(VRally2Standalone ${STANDALONE_SOURCES} ${HEADERS})
 	set_target_properties(VRally2Standalone PROPERTIES OUTPUT_NAME "V-Rally-2")
 	target_compile_definitions(VRally2Standalone PRIVATE MOPHUN_STANDALONE=1)
-	target_link_libraries(VRally2Standalone PRIVATE
-		${MOPHUN_SDL_TARGET}
-		${AUDIOTOOLBOX_FRAMEWORK}
-		${COREFOUNDATION_FRAMEWORK})
+	target_include_directories(VRally2Standalone PRIVATE MoRePhun)
+	configure_morephun_target(VRally2Standalone)
 
-	function(embed_macho_section TARGET SECTION FILE_PATH)
-		target_link_options(${TARGET} PRIVATE
-			"LINKER:-sectcreate,__DATA,${SECTION},${FILE_PATH}")
-		set_property(TARGET ${TARGET} APPEND PROPERTY LINK_DEPENDS "${FILE_PATH}")
-	endfunction()
-	embed_macho_section(VRally2Standalone __vr_mpn "${VRALLY_MPN}")
-	embed_macho_section(VRally2Standalone __vr_multi "${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_multipack.mpc")
-	embed_macho_section(VRally2Standalone __vr_extra1 "${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack1.mpc")
-	embed_macho_section(VRally2Standalone __vr_extra2 "${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack2.mpc")
-	embed_macho_section(VRally2Standalone __vr_extra3 "${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack3.mpc")
-	embed_macho_section(VRally2Standalone __vr_extra4 "${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack4.mpc")
+	if(APPLE)
+		function(embed_macho_section TARGET SECTION FILE_PATH)
+			target_link_options(${TARGET} PRIVATE
+				"LINKER:-sectcreate,__DATA,${SECTION},${FILE_PATH}")
+			set_property(TARGET ${TARGET} APPEND PROPERTY LINK_DEPENDS "${FILE_PATH}")
+		endfunction()
+		embed_macho_section(VRally2Standalone __vr_mpn "${VRALLY_MPN}")
+		embed_macho_section(VRally2Standalone __vr_multi "${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_multipack.mpc")
+		embed_macho_section(VRally2Standalone __vr_extra1 "${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack1.mpc")
+		embed_macho_section(VRally2Standalone __vr_extra2 "${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack2.mpc")
+		embed_macho_section(VRally2Standalone __vr_extra3 "${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack3.mpc")
+		embed_macho_section(VRally2Standalone __vr_extra4 "${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack4.mpc")
+	endif()
 endif()
 
 add_executable(MPNInspect tools/mpn_inspect.cpp)
 
 if(BUILD_TESTING)
+	add_executable(BinaryFormatTests tests/binary_format_tests.cpp)
+	target_include_directories(BinaryFormatTests PRIVATE MoRePhun)
+	add_test(NAME BinaryFormatTests COMMAND BinaryFormatTests)
+
 	add_executable(StorageTests
 		tests/storage_tests.cpp
 		MoRePhun/storage.cpp

@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <cstring>
 #include <iostream>
 #include <thread>
 
@@ -41,20 +40,16 @@ void MophunVM::emulate()
 		write32(base, (read32(base) & ~mask) | (static_cast<uint32_t>(value) << shift));
 	};
 	auto readMemory16 = [this](uint32_t address) -> uint16_t {
-		uint16_t value;
-		std::memcpy(&value, memory.ram.data() + address, sizeof(value));
-		return value;
+		return readLittleU16(memory.ram.data() + address);
 	};
 	auto readMemory32 = [this](uint32_t address) -> uint32_t {
-		uint32_t value;
-		std::memcpy(&value, memory.ram.data() + address, sizeof(value));
-		return value;
+		return readLittleU32(memory.ram.data() + address);
 	};
 	auto writeMemory16 = [this](uint32_t address, uint16_t value) {
-		std::memcpy(memory.ram.data() + address, &value, sizeof(value));
+		writeLittleU16(memory.ram.data() + address, value);
 	};
 	auto writeMemory32 = [this](uint32_t address, uint32_t value) {
-		std::memcpy(memory.ram.data() + address, &value, sizeof(value));
+		writeLittleU32(memory.ram.data() + address, value);
 	};
 	auto fetchImmediate = [this, &read32, &write32, &readMemory32]() -> uint32_t {
 		const uint32_t immediateAddress = read32(pc);
@@ -72,14 +67,13 @@ void MophunVM::emulate()
 	};
 
 	const uint32_t instructionPc = read32(pc);
-	PIPInstruction instruction{};
-	std::memcpy(&instruction, memory.ram.data() + instructionPc, sizeof(instruction));
+	const PIPInstruction instruction = decodePIPInstruction(memory.ram.data() + instructionPc);
 	write32(pc, instructionPc + sizeof(uint32_t));
 
 	auto branchShort = [&read32, &write32, &instruction](bool condition) {
 		if (condition)
 		{
-			const int32_t offset = (static_cast<int8_t>(instruction.gen.extra) - 1) * 4;
+			const int32_t offset = (static_cast<int8_t>(instruction.extra) - 1) * 4;
 			write32(pc, static_cast<uint32_t>(static_cast<int64_t>(read32(pc)) + offset));
 		}
 	};
@@ -90,11 +84,11 @@ void MophunVM::emulate()
 			write32(pc, read32(pc) + sizeof(uint32_t));
 	};
 
-	const uint32_t d = instruction.gen.dest;
-	const uint32_t s = instruction.gen.source;
-	const uint32_t t = instruction.gen.extra;
+	const uint32_t d = instruction.dest;
+	const uint32_t s = instruction.source;
+	const uint32_t t = instruction.extra;
 
-	switch (instruction.gen.opcode)
+	switch (instruction.opcode)
 	{
 		case BREAKPOINT:
 		case NOP:
@@ -165,7 +159,7 @@ void MophunVM::emulate()
 		case BLTIB: branchShort(static_cast<int8_t>(read8(d)) < static_cast<int8_t>(s)); break;
 		case BLTUIB: branchShort(read8(d) < s); break;
 
-		case LDQ: write32(d, static_cast<uint32_t>(static_cast<int32_t>(static_cast<int16_t>(instruction.word.word)))); break;
+		case LDQ: write32(d, static_cast<uint32_t>(static_cast<int32_t>(static_cast<int16_t>(instruction.word)))); break;
 		case JPr: write32(pc, read32(d)); break;
 		case CALLr:
 			write32(ra, read32(pc));
@@ -209,7 +203,7 @@ void MophunVM::emulate()
 				}
 			}
 			write32(sp, currentSp);
-			if (instruction.gen.opcode == RET)
+			if (instruction.opcode == RET)
 				write32(pc, read32(ra));
 			break;
 		}
@@ -300,7 +294,7 @@ void MophunVM::emulate()
 
 		default:
 			std::cerr << "Unknown opcode 0x" << std::hex
-				<< static_cast<uint32_t>(instruction.gen.opcode) << " at PC 0x"
+				<< static_cast<uint32_t>(instruction.opcode) << " at PC 0x"
 				<< instructionPc << std::dec << std::endl;
 			break;
 	}
