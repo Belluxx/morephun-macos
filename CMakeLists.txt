@@ -9,10 +9,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(MOPHUN_BUILD_VRALLY2_STANDALONE
-	"Build a local executable with user-supplied V-Rally 2 assets embedded"
+	"Build the V-Rally 2 launcher, optionally with user-supplied assets embedded"
 	OFF)
 set(MOPHUN_VRALLY2_ASSET_DIR "" CACHE PATH
-	"Directory containing V-Rally 2 MPN and MPC files")
+	"Optional directory containing V-Rally 2 MPN and MPC files to embed")
+set(MOPHUN_VRALLY2_GAME_FILE "" CACHE FILEPATH
+	"Optional V-Rally 2 MPN file to embed; MPC files are read from the same directory")
 option(MOPHUN_ENABLE_FLUIDSYNTH "Enable FluidSynth MIDI playback on Linux" ON)
 option(MOPHUN_REQUIRE_FLUIDSYNTH
 	"Fail configuration when Linux MIDI support is unavailable" OFF)
@@ -97,28 +99,44 @@ endif()
 
 if(MOPHUN_BUILD_VRALLY2_STANDALONE)
 	if(NOT APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
-		message(FATAL_ERROR "The embedded V-Rally 2 target is supported only on macOS and Linux")
-	endif()
-	if(NOT IS_DIRECTORY "${MOPHUN_VRALLY2_ASSET_DIR}")
-		message(FATAL_ERROR
-			"Set MOPHUN_VRALLY2_ASSET_DIR to a directory containing the game files")
+		message(FATAL_ERROR "The V-Rally 2 standalone target is supported only on macOS and Linux")
 	endif()
 
-	set(VRALLY_MPN "${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_[RC14EU]_[multiscreen]_M5.mpn")
-	set(VRALLY_PACKS
-		"${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_multipack.mpc"
-		"${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack1.mpc"
-		"${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack2.mpc"
-		"${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack3.mpc"
-		"${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack4.mpc")
-	foreach(GAME_FILE IN LISTS VRALLY_MPN VRALLY_PACKS)
-		if(NOT EXISTS "${GAME_FILE}")
-			message(FATAL_ERROR "Required local game file is missing: ${GAME_FILE}")
+	set(VRALLY_EMBED_ASSETS OFF)
+	if(MOPHUN_VRALLY2_GAME_FILE)
+		get_filename_component(VRALLY_MPN "${MOPHUN_VRALLY2_GAME_FILE}" ABSOLUTE
+			BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+		get_filename_component(VRALLY_ASSET_DIR "${VRALLY_MPN}" DIRECTORY)
+		set(VRALLY_EMBED_ASSETS ON)
+	elseif(MOPHUN_VRALLY2_ASSET_DIR)
+		get_filename_component(VRALLY_ASSET_DIR "${MOPHUN_VRALLY2_ASSET_DIR}" ABSOLUTE
+			BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+		set(VRALLY_MPN "${VRALLY_ASSET_DIR}/VRally2_[RC14EU]_[multiscreen]_M5.mpn")
+		set(VRALLY_EMBED_ASSETS ON)
+	endif()
+
+	if(VRALLY_EMBED_ASSETS)
+		if(NOT IS_DIRECTORY "${VRALLY_ASSET_DIR}")
+			message(FATAL_ERROR "V-Rally 2 asset directory does not exist: ${VRALLY_ASSET_DIR}")
 		endif()
-	endforeach()
+		set(VRALLY_PACKS
+			"${VRALLY_ASSET_DIR}/VRally2_multipack.mpc"
+			"${VRALLY_ASSET_DIR}/VRally2_extrapack1.mpc"
+			"${VRALLY_ASSET_DIR}/VRally2_extrapack2.mpc"
+			"${VRALLY_ASSET_DIR}/VRally2_extrapack3.mpc"
+			"${VRALLY_ASSET_DIR}/VRally2_extrapack4.mpc")
+		foreach(GAME_FILE IN LISTS VRALLY_MPN VRALLY_PACKS)
+			if(NOT EXISTS "${GAME_FILE}")
+				message(FATAL_ERROR "Required local game file is missing: ${GAME_FILE}")
+			endif()
+		endforeach()
+	endif()
 
 	set(STANDALONE_SOURCES ${SOURCES})
-	if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+	if(NOT VRALLY_EMBED_ASSETS)
+		list(REMOVE_ITEM STANDALONE_SOURCES
+			"${CMAKE_CURRENT_SOURCE_DIR}/MoRePhun/embedded_assets.cpp")
+	elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 		add_executable(AssetEmbedder tools/embed_assets.cpp)
 		set(GENERATED_ASSET_SOURCE
 			"${CMAKE_CURRENT_BINARY_DIR}/generated/vrally2_embedded_assets.cpp")
@@ -140,27 +158,34 @@ if(MOPHUN_BUILD_VRALLY2_STANDALONE)
 	add_executable(VRally2Standalone ${STANDALONE_SOURCES} ${HEADERS})
 	set_target_properties(VRally2Standalone PROPERTIES OUTPUT_NAME "V-Rally-2")
 	target_compile_definitions(VRally2Standalone PRIVATE MOPHUN_STANDALONE=1)
+	if(VRALLY_EMBED_ASSETS)
+		target_compile_definitions(VRally2Standalone PRIVATE MOPHUN_EMBEDDED_ASSETS=1)
+	endif()
 	target_include_directories(VRally2Standalone PRIVATE MoRePhun)
 	configure_morephun_target(VRally2Standalone)
 
-	if(APPLE)
+	if(VRALLY_EMBED_ASSETS AND APPLE)
 		function(embed_macho_section TARGET SECTION FILE_PATH)
 			target_link_options(${TARGET} PRIVATE
 				"LINKER:-sectcreate,__DATA,${SECTION},${FILE_PATH}")
 			set_property(TARGET ${TARGET} APPEND PROPERTY LINK_DEPENDS "${FILE_PATH}")
 		endfunction()
 		embed_macho_section(VRally2Standalone __vr_mpn "${VRALLY_MPN}")
-		embed_macho_section(VRally2Standalone __vr_multi "${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_multipack.mpc")
-		embed_macho_section(VRally2Standalone __vr_extra1 "${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack1.mpc")
-		embed_macho_section(VRally2Standalone __vr_extra2 "${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack2.mpc")
-		embed_macho_section(VRally2Standalone __vr_extra3 "${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack3.mpc")
-		embed_macho_section(VRally2Standalone __vr_extra4 "${MOPHUN_VRALLY2_ASSET_DIR}/VRally2_extrapack4.mpc")
+		embed_macho_section(VRally2Standalone __vr_multi "${VRALLY_ASSET_DIR}/VRally2_multipack.mpc")
+		embed_macho_section(VRally2Standalone __vr_extra1 "${VRALLY_ASSET_DIR}/VRally2_extrapack1.mpc")
+		embed_macho_section(VRally2Standalone __vr_extra2 "${VRALLY_ASSET_DIR}/VRally2_extrapack2.mpc")
+		embed_macho_section(VRally2Standalone __vr_extra3 "${VRALLY_ASSET_DIR}/VRally2_extrapack3.mpc")
+		embed_macho_section(VRally2Standalone __vr_extra4 "${VRALLY_ASSET_DIR}/VRally2_extrapack4.mpc")
 	endif()
 endif()
 
 add_executable(MPNInspect tools/mpn_inspect.cpp)
 
 if(BUILD_TESTING)
+	if(TARGET VRally2Standalone)
+		add_test(NAME VRally2StandaloneHelp COMMAND VRally2Standalone --help)
+	endif()
+
 	add_executable(BinaryFormatTests tests/binary_format_tests.cpp)
 	target_include_directories(BinaryFormatTests PRIVATE MoRePhun)
 	add_test(NAME BinaryFormatTests COMMAND BinaryFormatTests)

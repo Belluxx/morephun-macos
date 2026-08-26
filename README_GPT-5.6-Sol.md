@@ -105,15 +105,24 @@ The build also provides `MPNInspect`; builds with a host MIDI backend provide
 `AudioProbe`. Linux additionally supports `MOPHUN_SOUNDFONT=/path/to/file.sf2`
 and `MOPHUN_AUDIO_DRIVER=pulseaudio|alsa` overrides.
 
-## Optional local standalone build
+## Optional standalone build
 
-On Linux, a local executable can embed user-supplied V-Rally 2 files:
+On Linux, build a launcher that accepts the game directory or MPN file at runtime:
 
 ```sh
-scripts/build-standalone-linux.sh /absolute/path/to/vrally2-assets
+scripts/build-standalone-linux.sh
+dist/V-Rally-2 /absolute/path/to/vrally2-assets
 ```
 
 On Apple Silicon macOS, use:
+
+```sh
+scripts/build-standalone-macos.sh
+dist/V-Rally-2 /absolute/path/to/vrally2-assets
+```
+
+The runtime argument may be the asset directory or the MPN file itself. To make
+a personal executable with the assets embedded, pass that path to the build script:
 
 ```sh
 scripts/build-standalone-macos.sh /absolute/path/to/vrally2-assets
@@ -130,7 +139,8 @@ VRally2_extrapack3.mpc
 VRally2_extrapack4.mpc
 ```
 
-The result is written to `dist/V-Rally-2`.
+The result is written to `dist/V-Rally-2`. Do not redistribute a build containing
+embedded assets unless you have the rights to do so.
 
 ## Development
 

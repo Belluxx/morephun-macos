@@ -37,14 +37,16 @@ VRally2_extrapack4.mpc
 Then run:
 
 ```sh
-# Compile the game
-./scripts/build-standalone-macos.sh /absolute/path/to/the/game/files
+# Compile the launcher
+./scripts/build-standalone-macos.sh
 
 # Run the game
+./dist/V-Rally-2 /absolute/path/to/the/game/files
+
+# If you want a portable static build with embedded game data
+./scripts/build-standalone-macos.sh /absolute/path/to/the/game/files
 ./dist/V-Rally-2
 ```
-
-The result is a single executable with the game data embedded in it.
 
 ## Linux
 
@@ -58,11 +60,11 @@ sudo apt install build-essential cmake pkg-config libsdl2-dev libfluidsynth-dev 
 Then use the same game files listed above (from [My Abandonware](https://www.myabandonware.com/game/v-rally-2-yy1)):
 
 ```sh
-# Compile the game
-./scripts/build-standalone-linux.sh /absolute/path/to/the/game/files
+# Compile the launcher
+./scripts/build-standalone-linux.sh
 
 # Run the game
-./dist/V-Rally-2
+./dist/V-Rally-2 /absolute/path/to/the/game/files
 ```
 
 If your Linux distribution does not install a default MIDI SoundFont, run the game with `MOPHUN_SOUNDFONT=/absolute/path/to/a/general-midi.sf2`.
