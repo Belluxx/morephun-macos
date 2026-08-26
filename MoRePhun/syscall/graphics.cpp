@@ -1,6 +1,7 @@
 #include "../mophun_os.h"
 #include "../registers.h"
 #include <algorithm>
+#include <climits>
 #include <cstdlib>
 #include <cstring>
 
