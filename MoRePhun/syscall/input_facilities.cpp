@@ -24,5 +24,14 @@ void MophunOS::vGetButtonData()
     if (keystate[input->keys[POINTERDOWN]])     pressedKeys += POINTER_DOWN;
     if (keystate[input->keys[POINTERALTDOWN]])  pressedKeys += POINTER_ALTDOWN;
 
+    if (devtools.enabled())
+    {
+        pressedKeys |= devtools.scriptedKeys();
+        devtools.applyPokes(*mophunVM);
+    }
+
+    if (turbo->enabled())
+        pressedKeys = turbo->filterInput(pressedKeys);
+
     mophunVM->writeReg(r0, pressedKeys);
 }

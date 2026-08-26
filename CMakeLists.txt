@@ -181,6 +181,15 @@ endif()
 
 add_executable(MPNInspect tools/mpn_inspect.cpp)
 
+# Offline renderer for tuning the turbo cinematic (no game data needed).
+add_executable(TurboPreview
+	tools/turbo_preview.cpp
+	MoRePhun/turbo/cinematic.cpp
+	MoRePhun/turbo/retro3d.cpp
+	MoRePhun/turbo/turbo_config.cpp)
+target_include_directories(TurboPreview PRIVATE MoRePhun)
+target_link_libraries(TurboPreview PRIVATE ${MOPHUN_SDL_TARGET})
+
 if(BUILD_TESTING)
 	if(TARGET VRally2Standalone)
 		add_test(NAME VRally2StandaloneHelp COMMAND VRally2Standalone --help)

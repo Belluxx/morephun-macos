@@ -48,6 +48,38 @@ Then run:
 ./dist/V-Rally-2
 ```
 
+## Turbo boost (emulator-side feature)
+
+The launcher adds a hidden turbo mechanic on top of the unmodified game. Drive fast
+and clean to fill the blue meter in the bottom-right corner of the race HUD; when it
+reads 100% it pulses, and pressing **UP** (release it first if you were holding it)
+starts a slow-motion cinematic of the driver arming and pressing the turbo button.
+The camera flies out through the rear window into the normal chase view, the music
+drops, control returns and the car is boosted for a few seconds with flames, dust
+and an air dome.
+
+* The meter charges above ~70% of full speed and faster above ~90%. Braking,
+  reversing, driving off the road, slowing down and sudden impacts drain it.
+* Music: `assets/turbo_music.mp3` is used automatically; you can also put a
+  `turbo_music.mp3` next to the game files or the launcher, or point
+  `MOPHUN_TURBO_MUSIC` at any file. The sequence plays from 1:49 and is cut so the
+  drop (2:08.28) lands on the exact frame gameplay resumes. Without a music file the
+  cinematic runs on a silent clock.
+* Every value is tunable through `MOPHUN_TURBO_<NAME>` environment variables, one per
+  field of `MoRePhun/turbo/turbo_config.h` (for example
+  `MOPHUN_TURBO_MUSIC_DROP_OFFSET=128.3`, `MOPHUN_TURBO_DURATION=10`,
+  `MOPHUN_TURBO_SPEED_MULTIPLIER=2`, `MOPHUN_TURBO_CINEMATIC_TIME_SCALE=0.1`).
+  `MOPHUN_TURBO_DISABLED=1` removes the feature entirely.
+
+Development keys while the game runs: `F1` fill the meter, `F2`/`F5` trigger the
+sequence, `F3` skip the cinematic to the drop, `F4` toggle the debug overlay
+(state, charge, guest speed, shot, offsets), `F6`/`F7` nudge the drop offset by
+0.05 s, `F8`/`F9` scale the slow-motion factor, `F10`/`F11` move the music start
+by 0.25 s. Headless helpers: `MOPHUN_TURBO_DEV_TRIGGER_FRAME=<frame>` auto-triggers,
+`MOPHUN_TURBO_DEV_SHOT_DIRECTORY=<dir>` dumps cinematic frames, and the
+`TurboPreview` tool renders the cinematic offline
+(`build/dev/TurboPreview <out-dir> [step|t1,t2,...]`).
+
 ## Linux
 
 Linux should be supported too, but is currently untested. First install the required tools:

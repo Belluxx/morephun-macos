@@ -9,6 +9,8 @@
 #include "storage.h"
 #include "video.h"
 #include "input.h"
+#include "devtools.h"
+#include "turbo/turbo_system.h"
 
 
 class MophunOS {
@@ -29,6 +31,9 @@ class MophunOS {
 		Audio* audio = new Audio();
 		OSData osdata;
 		Storage storage;
+		DevTools devtools;
+		TurboSystem* turbo = nullptr;
+		uint64_t executedInstructions = 0;
 		bool status;
 		void setupSyscalls();
 
@@ -98,6 +103,7 @@ class MophunOS {
 		void vGetButtonData();
 
 		// Time/data api
+		uint32_t currentTickCount() const;
 		void vGetTickCount();
 		void vGetTimeDate();
 };

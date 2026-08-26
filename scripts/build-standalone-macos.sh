@@ -127,6 +127,12 @@ if [ -n "$game_file" ]; then
 fi
 
 cmake -E copy "$build_root/V-Rally-2" "$project_root/dist/V-Rally-2"
+# The turbo cinematic music is loaded at runtime from next to the launcher.
+if [ -n "$asset_directory" ] && [ -f "$asset_directory/turbo_music.mp3" ]; then
+	cmake -E copy "$asset_directory/turbo_music.mp3" "$project_root/dist/turbo_music.mp3"
+elif [ -f "$project_root/assets/turbo_music.mp3" ]; then
+	cmake -E copy "$project_root/assets/turbo_music.mp3" "$project_root/dist/turbo_music.mp3"
+fi
 if [ -n "$game_file" ]; then
 	echo "Local standalone executable with embedded game data: $project_root/dist/V-Rally-2"
 	echo "Do not redistribute it unless you have rights to every embedded asset."
