@@ -67,6 +67,20 @@ Then use the same game files listed above (from [My Abandonware](https://www.mya
 
 If your Linux distribution does not install a default MIDI SoundFont, run the game with `MOPHUN_SOUNDFONT=/absolute/path/to/a/general-midi.sf2`.
 
+## Development build
+
+Development builds work the same way on macOS and Linux. After installing the required tools, run:
+
+```sh
+cmake -S . -B build/dev -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON
+cmake --build build/dev --parallel
+ctest --test-dir build/dev --output-on-failure
+
+build/dev/MoRePhun '/absolute/path/to/game.mpn'
+```
+
+On Linux, add `-DMOPHUN_REQUIRE_FLUIDSYNTH=ON` to the first command if you want configuration to fail instead of building without MIDI support.
+
 ## Controls
 
 - Arrow keys or WASD: navigate and steer
