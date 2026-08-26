@@ -60,7 +60,8 @@ and an air dome.
 
 * The meter charges above ~70% of full speed and faster above ~90%. Braking,
   reversing, driving off the road, slowing down and sudden impacts drain it.
-* Music: put the track next to the game files as `turbo_music.mp3`, or point
+* Music: `assets/turbo_music.mp3` is used automatically; you can also put a
+  `turbo_music.mp3` next to the game files or the launcher, or point
   `MOPHUN_TURBO_MUSIC` at any file. The sequence plays from 1:49 and is cut so the
   drop (2:08.28) lands on the exact frame gameplay resumes. Without a music file the
   cinematic runs on a silent clock.

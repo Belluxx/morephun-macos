@@ -113,9 +113,11 @@ void TurboSystem::ensureMusic()
 	if (!assetDirectory.empty())
 		candidates.push_back(assetDirectory + "/turbo_music.mp3");
 	candidates.push_back("turbo_music.mp3");
+	candidates.push_back("assets/turbo_music.mp3"); // repository checkout, run from its root
 	if (char* base = SDL_GetBasePath())
 	{
 		candidates.push_back(std::string(base) + "turbo_music.mp3");
+		candidates.push_back(std::string(base) + "../assets/turbo_music.mp3"); // dist/ launcher
 		SDL_free(base);
 	}
 	for (const std::string& candidate : candidates)
