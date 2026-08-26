@@ -12,10 +12,19 @@ void writeU16(uint8_t* destination, uint16_t value)
 
 } // namespace
 
+uint32_t MophunOS::currentTickCount() const
+{
+	if (turbo != nullptr && turbo->enabled())
+		return turbo->guestTicks();
+	return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::system_clock::now().time_since_epoch()).count() - osdata.timer);
+}
+
 void MophunOS::vGetTickCount()
 {
-	 uint32_t cnt = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - osdata.timer;
-	 mophunVM->writeReg(r0, cnt);
+	if (devtools.enabled())
+		devtools.onTickCount();
+	mophunVM->writeReg(r0, currentTickCount());
 }
 
 void MophunOS::vGetTimeDate()

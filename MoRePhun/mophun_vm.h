@@ -27,6 +27,7 @@ class MophunVM {
 		uint32_t getResourceAddress(uint32_t index) const;
 		uint32_t getResourceSize(uint32_t index) const;
 		std::vector<PoolData>* getPoolEntries();
+		const Memory& getMemoryLayout() const { return memory; }
 	private:
 		VMGPHeader romHeader;
 		Memory memory;

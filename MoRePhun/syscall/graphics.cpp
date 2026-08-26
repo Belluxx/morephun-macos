@@ -4,6 +4,7 @@
 #include <climits>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 namespace {
 
@@ -161,7 +162,20 @@ void MophunOS::vClearScreen()
 
 void MophunOS::vFlipScreen()
 {
-	video->present(std::getenv("MOPHUN_SCREENSHOT"));
+	const char* screenshotPath = std::getenv("MOPHUN_SCREENSHOT");
+	std::string devScreenshot;
+	if (devtools.enabled())
+	{
+		devScreenshot = devtools.screenshotPathForFrame();
+		if (!devScreenshot.empty())
+			screenshotPath = devScreenshot.c_str();
+	}
+	if (turbo->enabled())
+		turbo->onFlip(screenshotPath);
+	else
+		video->present(screenshotPath);
+	if (devtools.enabled())
+		devtools.onFlip(*mophunVM, executedInstructions, currentTickCount());
 }
 
 void MophunOS::vSetPaletteEntry()
@@ -207,6 +221,7 @@ void MophunOS::vFillRect()
 	SDL_Rect rectangle = {x0, y0, x1 - x0 + 1, y1 - y0 + 1};
 	setForeground(video->app.renderer, osdata);
 	SDL_RenderFillRect(video->app.renderer, &rectangle);
+	turbo->onFillRect();
 }
 
 void MophunOS::vDrawLine()
@@ -245,6 +260,7 @@ void MophunOS::vDrawObject()
 	const int x = static_cast<int16_t>(mophunVM->readReg(p0));
 	const int y = static_cast<int16_t>(mophunVM->readReg(p1));
 	const auto* sprite = reinterpret_cast<const SPRITE*>(mophunVM->getRamAddress(mophunVM->readReg(p2)));
+	turbo->onDrawObject(x, y, sprite);
 	SDL_Texture* const texture = createSpriteTexture(video, osdata, sprite,
 		(osdata.currentTransferMode & MODE_TRANS) != 0);
 	if (texture == nullptr)
