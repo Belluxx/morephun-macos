@@ -10,7 +10,6 @@
 #include "video.h"
 #include "input.h"
 #include "devtools.h"
-#include "turbo/turbo_system.h"
 
 
 class MophunOS {
@@ -32,7 +31,6 @@ class MophunOS {
 		OSData osdata;
 		Storage storage;
 		DevTools devtools;
-		TurboSystem* turbo = nullptr;
 		uint64_t executedInstructions = 0;
 		bool status;
 		void setupSyscalls();

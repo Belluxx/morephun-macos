@@ -30,8 +30,5 @@ void MophunOS::vGetButtonData()
         devtools.applyPokes(*mophunVM);
     }
 
-    if (turbo->enabled())
-        pressedKeys = turbo->filterInput(pressedKeys);
-
     mophunVM->writeReg(r0, pressedKeys);
 }

@@ -69,7 +69,6 @@ MophunOS::MophunOS()
 	syscalls["vUpdateSprite"] = std::bind(&MophunOS::vUpdateSprite, this);
 	syscalls["vitoa"] = std::bind(&MophunOS::vitoa, this);
 
-	turbo = new TurboSystem(*mophunVM, *video, loadTurboConfig());
 }
 
 
@@ -90,7 +89,6 @@ MophunOS::~MophunOS()
 			std::remove(it->second.path.c_str());
 	}
 
-	delete turbo;
 	delete mophunVM;
 	delete audio;
 	delete video;
@@ -103,8 +101,6 @@ bool MophunOS::loadRom(const std::string& romPath)
 	{
 		std::cout << "ROM loaded: " << romPath << std::endl;
 		storage.mountPacksNextTo(romPath);
-		const size_t separator = romPath.find_last_of("/\\");
-		turbo->setAssetDirectory(separator == std::string::npos ? std::string(".") : romPath.substr(0, separator));
 		std::cout << "Save directory: " << storage.getSaveDirectory() << std::endl;
 	}
 	else {
@@ -122,7 +118,6 @@ bool MophunOS::loadEmbeddedRom(const uint8_t* romData, size_t romSize)
 		return false;
 	}
 	std::cout << "Loaded embedded V-Rally 2 ROM (" << romSize << " bytes)" << std::endl;
-	turbo->setAssetDirectory(std::string());
 	std::cout << "Save directory: " << storage.getSaveDirectory() << std::endl;
 	return true;
 }

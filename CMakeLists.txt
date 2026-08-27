@@ -75,6 +75,10 @@ endfunction()
 # MoRePhun
 file(GLOB_RECURSE MOREPHUN_SOURCES MoRePhun/*.cpp)
 file(GLOB_RECURSE MOREPHUN_HEADERS MoRePhun/*.h)
+# Turbo gameplay is injected into the guest MPN by VRally2TurboMod. The legacy
+# host renderer remains available only to the standalone TurboPreview target.
+list(FILTER MOREPHUN_SOURCES EXCLUDE REGEX "/turbo/")
+list(FILTER MOREPHUN_HEADERS EXCLUDE REGEX "/turbo/")
 
 set(SOURCES ${MOREPHUN_SOURCES})
 
@@ -180,6 +184,16 @@ if(MOPHUN_BUILD_VRALLY2_STANDALONE)
 endif()
 
 add_executable(MPNInspect tools/mpn_inspect.cpp)
+
+add_executable(PIPDisasm
+	tools/pip_disasm.cpp
+	MoRePhun/rom_decrypt.cpp)
+target_include_directories(PIPDisasm PRIVATE MoRePhun)
+
+add_executable(VRally2TurboMod
+	tools/vrally2_turbo_mod.cpp
+	MoRePhun/rom_decrypt.cpp)
+target_include_directories(VRally2TurboMod PRIVATE MoRePhun)
 
 # Offline renderer for tuning the turbo cinematic (no game data needed).
 add_executable(TurboPreview
