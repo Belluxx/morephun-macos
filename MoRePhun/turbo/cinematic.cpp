@@ -639,18 +639,18 @@ void Cinematic::drawDriver(float beat)
 	}
 	// Mouth: a straight line that lifts on the right side into a smirk.
 	{
-		const Vec3 mouthCenter(0.012f * smirk, 0.055f + 0.004f * smirk, 0.112f);
-		head.addBox({0, 0, 0}, {0.064f, 0.010f, 0.006f}, Rgb(120, 60, 56),
-			Transform::translation(mouthCenter) * Transform::rotationZ(0.35f * smirk));
+		const Vec3 mouthCenter(0.018f * smirk, 0.055f + 0.008f * smirk, 0.112f);
+		head.addBox({0, 0, 0}, {0.074f, 0.012f, 0.006f}, Rgb(112, 48, 48),
+			Transform::translation(mouthCenter) * Transform::rotationZ(0.58f * smirk));
 		head.addBox({0.0f, 0.044f - 0.002f * smirk, 0.106f}, {0.05f, 0.012f, 0.012f}, scaleRgb(Skin, 0.96f)); // chin
 		// Mouth corners wrap onto the cheeks so the smirk reads in profile; the
 		// right corner lifts and the cheek creases.
-		head.addBox({0.088f, 0.055f + 0.018f * smirk, 0.096f}, {0.02f, 0.010f, 0.026f}, Rgb(120, 60, 56));
+		head.addBox({0.088f, 0.055f + 0.032f * smirk, 0.096f}, {0.02f, 0.012f, 0.026f}, Rgb(112, 48, 48));
 		head.addBox({-0.088f, 0.055f, 0.096f}, {0.02f, 0.010f, 0.022f}, Rgb(120, 60, 56));
 		if (smirk > 0.2f)
 		{
-			head.addBox({0.092f, 0.085f, 0.085f}, {0.012f, 0.045f * smirk, 0.010f}, scaleRgb(Skin, 0.84f));
-			head.addBox({0.096f, 0.075f + 0.02f * smirk, 0.10f}, {0.012f, 0.012f, 0.012f}, scaleRgb(Skin, 1.08f));
+			head.addBox({0.092f, 0.085f, 0.085f}, {0.014f, 0.055f * smirk, 0.010f}, scaleRgb(Skin, 0.78f));
+			head.addBox({0.096f, 0.075f + 0.03f * smirk, 0.10f}, {0.014f, 0.014f, 0.012f}, scaleRgb(Skin, 1.12f));
 		}
 	}
 	const Transform headPose = Transform::translation({DriverHead.x, DriverHead.y - 0.12f + breathe, DriverHead.z})
@@ -748,7 +748,13 @@ void Cinematic::drawGameShot(SDL_Texture* snapshot, float u, float beat)
 CinematicFrame Cinematic::render(double t, SDL_Texture* gameSnapshot)
 {
 	CinematicFrame frame;
-	const float beat = static_cast<float>(t / beatLength());
+	// The native guest cannot capture and transform the live game framebuffer on
+	// every Mophun device.  Its serialized 3D sequence therefore drops the
+	// snapshot-only activation shot and retimes the remaining 28 beats over the
+	// same music interval.
+	const float beat = guestExport
+		? 4.0f + static_cast<float>(t / dropTime()) * 28.0f
+		: static_cast<float>(t / beatLength());
 	float u = 0.0f;
 	const int shot = shotAt(beat, u);
 	const double dt = std::max(0.0, t - lastTime);

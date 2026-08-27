@@ -39,6 +39,11 @@ MophunOS::MophunOS()
 	syscalls["vMsgBox"] = std::bind(&MophunOS::vMsgBox, this);
 	syscalls["vMsgBoxU"] = std::bind(&MophunOS::vMsgBoxU, this);
 	syscalls["vPlayResource"] = std::bind(&MophunOS::vPlayResource, this);
+	syscalls["vSoundInit"] = std::bind(&MophunOS::vSoundInit, this);
+	syscalls["vSoundGetHandle"] = std::bind(&MophunOS::vSoundGetHandle, this);
+	syscalls["vSoundCtrl"] = std::bind(&MophunOS::vSoundCtrl, this);
+	syscalls["vSoundCtrlEx"] = std::bind(&MophunOS::vSoundCtrlEx, this);
+	syscalls["vSoundDisposeHandle"] = std::bind(&MophunOS::vSoundDisposeHandle, this);
 	syscalls["vSelectFont"] = std::bind(&MophunOS::vSelectFont, this);
 	syscalls["vSetActiveFont"] = std::bind(&MophunOS::vSetActiveFont, this);
 	syscalls["vSetForeColor"] = std::bind(&MophunOS::vSetForeColor, this);

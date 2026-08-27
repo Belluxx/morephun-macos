@@ -5,6 +5,11 @@
 #include "graphics.h"
 #include "stream_io.h"
 
+struct SoundSlot {
+	uint32_t address;
+	uint32_t size;
+};
+
 struct OSData {
 	uint8_t currentFgColor[3] = {255, 255, 255};
 	uint8_t currentBgColor[3] = {0, 0, 0};
@@ -22,4 +27,6 @@ struct OSData {
 	uint32_t currentFontAddress = 0;
 	std::unordered_map<uint32_t, StreamSlot> streamSlots;
 	uint32_t streamCounter;
+	std::unordered_map<uint32_t, SoundSlot> soundSlots;
+	uint32_t soundCounter = 0;
 };

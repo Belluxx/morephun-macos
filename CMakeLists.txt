@@ -92,13 +92,14 @@ if(APPLE)
 	add_executable(AudioProbe tools/audio_probe.cpp MoRePhun/audio.cpp MoRePhun/audio.h)
 	target_include_directories(AudioProbe PRIVATE MoRePhun)
 	target_link_libraries(AudioProbe PRIVATE
+		${MOPHUN_SDL_TARGET}
 		${AUDIOTOOLBOX_FRAMEWORK}
 		${COREFOUNDATION_FRAMEWORK})
 elseif(MOPHUN_HAVE_FLUIDSYNTH)
 	add_executable(AudioProbe tools/audio_probe.cpp MoRePhun/audio.cpp MoRePhun/audio.h)
 	target_include_directories(AudioProbe PRIVATE MoRePhun)
 	target_compile_definitions(AudioProbe PRIVATE MOPHUN_HAVE_FLUIDSYNTH=1)
-	target_link_libraries(AudioProbe PRIVATE PkgConfig::FLUIDSYNTH)
+	target_link_libraries(AudioProbe PRIVATE ${MOPHUN_SDL_TARGET} PkgConfig::FLUIDSYNTH)
 endif()
 
 if(MOPHUN_BUILD_VRALLY2_STANDALONE)
@@ -192,8 +193,11 @@ target_include_directories(PIPDisasm PRIVATE MoRePhun)
 
 add_executable(VRally2TurboMod
 	tools/vrally2_turbo_mod.cpp
-	MoRePhun/rom_decrypt.cpp)
+	MoRePhun/rom_decrypt.cpp
+	MoRePhun/turbo/cinematic.cpp
+	MoRePhun/turbo/retro3d.cpp)
 target_include_directories(VRally2TurboMod PRIVATE MoRePhun)
+target_link_libraries(VRally2TurboMod PRIVATE ${MOPHUN_SDL_TARGET})
 
 # Offline renderer for tuning the turbo cinematic (no game data needed).
 add_executable(TurboPreview

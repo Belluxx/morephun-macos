@@ -1,9 +1,12 @@
 #include "audio.h"
 
+#include <SDL.h>
+#include <cstring>
 #include <cstdlib>
 #include <fstream>
 #include <limits>
 #include <sstream>
+#include <vector>
 
 #ifdef __APPLE__
 #include <AudioToolbox/AudioToolbox.h>
@@ -15,6 +18,7 @@
 #endif
 
 struct Audio::Impl {
+	SDL_AudioDeviceID waveDevice = 0;
 #ifdef __APPLE__
 	MusicSequence sequence = nullptr;
 	MusicPlayer player = nullptr;
@@ -334,8 +338,122 @@ bool Audio::playMidi(const uint8_t* data, size_t size, bool loop, std::string& e
 #endif
 }
 
+bool Audio::playWave(const uint8_t* data, size_t size, bool loop, std::string& error)
+{
+	stop();
+	error.clear();
+	if (std::getenv("MOPHUN_DISABLE_AUDIO") != nullptr)
+	{
+		error = "wave audio is disabled";
+		return false;
+	}
+	if (loop)
+	{
+		error = "looped wave playback is not implemented";
+		return false;
+	}
+	if (data == nullptr || size < 44 || size > static_cast<size_t>(std::numeric_limits<int>::max()))
+	{
+		error = "wave resource size is invalid";
+		return false;
+	}
+	if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0)
+	{
+		error = std::string("SDL audio initialization failed: ") + SDL_GetError();
+		return false;
+	}
+
+	SDL_RWops* source = SDL_RWFromConstMem(data, static_cast<int>(size));
+	if (source == nullptr)
+	{
+		error = std::string("unable to open wave memory: ") + SDL_GetError();
+		return false;
+	}
+	SDL_AudioSpec sourceSpec{};
+	Uint8* sourceBytes = nullptr;
+	Uint32 sourceLength = 0;
+	if (SDL_LoadWAV_RW(source, 1, &sourceSpec, &sourceBytes, &sourceLength) == nullptr)
+	{
+		error = std::string("unable to decode wave resource: ") + SDL_GetError();
+		return false;
+	}
+
+	SDL_AudioSpec requested{};
+	requested.freq = 44100;
+	requested.format = AUDIO_S16SYS;
+	requested.channels = 2;
+	requested.samples = 2048;
+	SDL_AudioSpec obtained{};
+	impl->waveDevice = SDL_OpenAudioDevice(nullptr, 0, &requested, &obtained,
+		SDL_AUDIO_ALLOW_FREQUENCY_CHANGE | SDL_AUDIO_ALLOW_FORMAT_CHANGE |
+		SDL_AUDIO_ALLOW_CHANNELS_CHANGE);
+	if (impl->waveDevice == 0)
+	{
+		error = std::string("unable to open wave audio device: ") + SDL_GetError();
+		SDL_FreeWAV(sourceBytes);
+		return false;
+	}
+
+	SDL_AudioCVT converter{};
+	if (SDL_BuildAudioCVT(&converter, sourceSpec.format, sourceSpec.channels,
+		sourceSpec.freq, obtained.format, obtained.channels, obtained.freq) < 0)
+	{
+		error = std::string("unable to configure wave conversion: ") + SDL_GetError();
+		SDL_FreeWAV(sourceBytes);
+		stop();
+		return false;
+	}
+
+	const Uint8* queueBytes = sourceBytes;
+	Uint32 queueLength = sourceLength;
+	std::vector<Uint8> converted;
+	if (converter.needed)
+	{
+		if (sourceLength > static_cast<Uint32>(std::numeric_limits<int>::max()) ||
+			converter.len_mult <= 0 ||
+			sourceLength > std::numeric_limits<size_t>::max() /
+				static_cast<size_t>(converter.len_mult))
+		{
+			error = "converted wave resource is too large";
+			SDL_FreeWAV(sourceBytes);
+			stop();
+			return false;
+		}
+		converted.resize(static_cast<size_t>(sourceLength) * converter.len_mult);
+		std::memcpy(converted.data(), sourceBytes, sourceLength);
+		converter.buf = converted.data();
+		converter.len = static_cast<int>(sourceLength);
+		if (SDL_ConvertAudio(&converter) != 0)
+		{
+			error = std::string("unable to convert wave resource: ") + SDL_GetError();
+			SDL_FreeWAV(sourceBytes);
+			stop();
+			return false;
+		}
+		queueBytes = converted.data();
+		queueLength = static_cast<Uint32>(converter.len_cvt);
+	}
+
+	const int queueResult = SDL_QueueAudio(impl->waveDevice, queueBytes, queueLength);
+	SDL_FreeWAV(sourceBytes);
+	if (queueResult != 0)
+	{
+		error = std::string("unable to queue wave resource: ") + SDL_GetError();
+		stop();
+		return false;
+	}
+	SDL_PauseAudioDevice(impl->waveDevice, 0);
+	return true;
+}
+
 void Audio::stop()
 {
+	if (impl->waveDevice != 0)
+	{
+		SDL_ClearQueuedAudio(impl->waveDevice);
+		SDL_CloseAudioDevice(impl->waveDevice);
+		impl->waveDevice = 0;
+	}
 #ifdef __APPLE__
 	if (impl->player != nullptr)
 	{

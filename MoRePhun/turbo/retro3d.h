@@ -2,6 +2,8 @@
 
 #include <SDL.h>
 #include <cstdint>
+#include <functional>
+#include <utility>
 #include <vector>
 
 // A deliberately tiny flat-shaded polygon renderer used for the turbo
@@ -106,12 +108,25 @@ struct RenderSettings {
 	float nearPlane = 0.04f;
 };
 
+// Screen-space output from the software 3D pipeline.  The native MPN patcher
+// uses this sink to serialize the very same depth-sorted, flat-shaded
+// triangles that TurboPreview sends to SDL.
+struct RetroScreenTriangle {
+	float x[3] = {0, 0, 0};
+	float y[3] = {0, 0, 0};
+	Rgb color;
+};
+
 class RetroRenderer {
 	public:
 		RetroRenderer(SDL_Renderer* renderer, int width, int height);
 		void begin(const Camera& camera, const RenderSettings& settings);
 		void submit(const Mesh& mesh, const Transform& transform);
 		void flush();
+		void setTriangleSink(std::function<void(const RetroScreenTriangle&)> sink)
+		{
+			triangleSink = std::move(sink);
+		}
 		// Screen projection of a world point (returns false when behind the camera).
 		bool project(const Vec3& world, float& sx, float& sy, float& depth) const;
 
@@ -130,6 +145,7 @@ class RetroRenderer {
 		Vec3 forward;
 		float focal = 1.0f;
 		std::vector<ScreenTriangle> queue;
+		std::function<void(const RetroScreenTriangle&)> triangleSink;
 		Vec3 toView(const Vec3& world) const;
 		void pushClipped(const Vec3 view[3], const Rgb& color);
 };

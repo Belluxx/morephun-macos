@@ -39,6 +39,13 @@ class Cinematic {
 		double dropTime() const;
 		double beatLength() const;
 		int shotCount() const;
+		// The embedded guest sequence has no live SDL game snapshot.  It starts at
+		// the first fully 3D shot and stretches shots 2-11 across the music build.
+		void setGuestExport(bool enabled) { guestExport = enabled; }
+		void setTriangleSink(std::function<void(const RetroScreenTriangle&)> sink)
+		{
+			retro.setTriangleSink(std::move(sink));
+		}
 		// Renders the frame for time t into the current render target. The game
 		// snapshot is used by the first and last shots.
 		CinematicFrame render(double t, SDL_Texture* gameSnapshot);
@@ -84,6 +91,7 @@ class Cinematic {
 		float lastBeat = -1.0f;
 		std::vector<double> smokePuffs;
 		int nextPulse = 0;
+		bool guestExport = false;
 
 		void buildModels();
 		float worldScale(int shot, float u) const;

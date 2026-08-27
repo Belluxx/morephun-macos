@@ -31,6 +31,18 @@ uint32_t readU32(const uint8_t* source)
 		(static_cast<uint32_t>(source[3]) << 24);
 }
 
+bool waveResourceSize(const uint8_t* source, uint32_t available, uint32_t& size)
+{
+	if (available < 12 || std::memcmp(source, "RIFF", 4) != 0 ||
+		std::memcmp(source + 8, "WAVE", 4) != 0)
+		return false;
+	const uint32_t payload = readU32(source + 4);
+	if (payload > available - 8 || payload < 4)
+		return false;
+	size = payload + 8;
+	return true;
+}
+
 class BitReader {
 	public:
 		BitReader(const uint8_t* data, uint32_t size) : data(data), bitSize(size * 8U) {}
@@ -283,6 +295,90 @@ void MophunOS::vPlayResource()
 	mophunVM->writeReg(r0, played ? 1 : 0);
 }
 
+void MophunOS::vSoundInit()
+{
+	// SND_OK. The SDL device is opened lazily on the first PLAY command so
+	// initialization remains harmless on headless runs.
+	mophunVM->writeReg(r0, 0);
+}
+
+void MophunOS::vSoundGetHandle()
+{
+	const uint32_t address = mophunVM->readReg(p0);
+	uint32_t size = 0;
+	if (address >= RAM_SIZE ||
+		!waveResourceSize(mophunVM->getRamAddress(address), RAM_SIZE - address, size))
+	{
+		mophunVM->writeReg(r0, static_cast<uint32_t>(-1));
+		return;
+	}
+	const uint32_t handle = ++osdata.soundCounter;
+	osdata.soundSlots[handle] = {address, size};
+	mophunVM->writeReg(r0, handle);
+}
+
+void MophunOS::vSoundCtrlEx()
+{
+	constexpr uint32_t play = 1;
+	constexpr uint32_t stop = 2;
+	constexpr uint32_t status = 8;
+	const uint32_t handle = mophunVM->readReg(p0);
+	const uint32_t command = mophunVM->readReg(p1);
+	const uint32_t parameters = mophunVM->readReg(p2);
+	auto found = osdata.soundSlots.find(handle);
+	if (command == stop)
+	{
+		audio->stop();
+		mophunVM->writeReg(r0, 0);
+		return;
+	}
+	if (command == status)
+	{
+		mophunVM->writeReg(r0, found == osdata.soundSlots.end() ?
+			static_cast<uint32_t>(-1) : 0);
+		return;
+	}
+	if (command != play || found == osdata.soundSlots.end())
+	{
+		mophunVM->writeReg(r0, static_cast<uint32_t>(-1));
+		return;
+	}
+
+	const bool loop = (parameters & 0xffffU) == 0xffffU;
+	std::string error;
+	const SoundSlot& sound = found->second;
+	if (!audio->playWave(mophunVM->getRamAddress(sound.address), sound.size, loop, error))
+	{
+		if (std::getenv("MOPHUN_DISABLE_AUDIO") == nullptr)
+			std::cerr << "Wave playback failed: " << error << std::endl;
+		mophunVM->writeReg(r0, static_cast<uint32_t>(-1));
+		return;
+	}
+	mophunVM->writeReg(r0, 0);
+}
+
+void MophunOS::vSoundCtrl()
+{
+	// The two-argument form shares the command implementation; parameters are
+	// ignored by every control code valid for vSoundCtrl.
+	mophunVM->writeReg(p2, 0);
+	vSoundCtrlEx();
+}
+
+void MophunOS::vSoundDisposeHandle()
+{
+	const uint32_t handle = mophunVM->readReg(p0);
+	auto found = osdata.soundSlots.find(handle);
+	if (found == osdata.soundSlots.end())
+	{
+		mophunVM->writeReg(r0, static_cast<uint32_t>(-1));
+		return;
+	}
+	audio->stop();
+	osdata.soundSlots.erase(found);
+	mophunVM->writeReg(r0, 0);
+}
+
 void MophunOS::vGetCaps()
 {
 	constexpr uint32_t video = 0;
@@ -312,7 +408,9 @@ void MophunOS::vGetCaps()
 			break;
 		case sound:
 			writeU16(caps + 0, 4);
-			writeU16(caps + 2, audio->midiSupported() ? 0x8 : 0);
+			// SCAPS_WAVE plus SCAPS_MIDI when a synthesizer is available.
+			writeU16(caps + 2, static_cast<uint16_t>(0x2 |
+				(audio->midiSupported() ? 0x8 : 0)));
 			break;
 		case communication:
 			writeU16(caps + 0, 4);

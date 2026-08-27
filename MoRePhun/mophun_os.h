@@ -78,6 +78,11 @@ class MophunOS {
 		void vMsgBox();
 		void vMsgBoxU();
 		void vPlayResource();
+		void vSoundInit();
+		void vSoundGetHandle();
+		void vSoundCtrl();
+		void vSoundCtrlEx();
+		void vSoundDisposeHandle();
 
 		// Stream IO api
 		void vStreamClose();

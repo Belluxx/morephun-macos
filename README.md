@@ -90,6 +90,35 @@ On Linux, add `-DMOPHUN_REQUIRE_FLUIDSYNTH=ON` to the first command if you want 
 - Space: secondary fire
 - Escape: back
 
+## Native V-Rally 2 turbo mod
+
+`VRally2TurboMod` patches the RC14EU M5 executable itself. The charge logic,
+HUD, 19.28-second low-poly 3D cinematic, soundtrack, race pause, and boost all
+execute from the patched cartridge; the emulator has no turbo-specific runtime
+hooks. The cinematic shows the car and cockpit, a pilot close-up with an animated
+smirk, and the hand opening the safety cover and pressing the turbo button.
+
+```sh
+ffmpeg -i assets/turbo_music.mp3 -ss 109.0 -t 19.28 -map 0:a:0 -vn \
+  -ac 1 -ar 11025 -c:a pcm_s16le -map_metadata -1 \
+  build/dev/turbo_music_clip.wav
+cmake --build build/dev --target VRally2TurboMod
+build/dev/VRally2TurboMod \
+  '/path/to/VRally2_[RC14EU]_[multiscreen]_M5.mpn' \
+  '/path/to/VRally2_Turbo_[RC14EU]_M5.mpn' \
+  build/dev/turbo_music_clip.wav
+build/dev/MoRePhun '/path/to/VRally2_Turbo_[RC14EU]_M5.mpn'
+```
+
+Drive fast and clean to fill the cyan-framed meter. A full white meter is
+ready; press Space to play the native activation sequence, then the yellow
+meter counts down the active boost. The patcher depth-sorts the 3D geometry into
+290 guest drawing frames at 15 FPS and embeds them with the transcoded recording.
+At runtime PIP2 code draws the triangles with `vDrawFlatPolygon` and plays the
+PCM WAVE through Mophun's `vSoundGetHandle`/`vSoundCtrlEx` API. MIDI cannot carry
+an MP3 recording, so PCM preserves the actual music while remaining a native
+cartridge asset.
+
 ## Credits
 
 Original emulator by [Luca1991](https://github.com/Luca1991/MoRePhun).

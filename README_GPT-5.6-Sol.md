@@ -142,37 +142,46 @@ VRally2_extrapack4.mpc
 The result is written to `dist/V-Rally-2`. Do not redistribute a build containing
 embedded assets unless you have the rights to do so.
 
-## Turbo boost (emulator-side feature)
+## Turbo boost (native MPN mod)
 
-The launcher adds a hidden turbo mechanic on top of the unmodified game. Drive fast
-and clean to fill the blue meter in the bottom-right corner of the race HUD; when it
-reads 100% it pulses, and pressing **UP** (release it first if you were holding it)
-starts a slow-motion cinematic of the driver arming and pressing the turbo button.
-The camera flies out through the rear window into the normal chase view, the music
-drops, control returns and the car is boosted for a few seconds with flames, dust
-and an air dome.
+`VRally2TurboMod` patches the supported RC14EU M5 executable with PIP2 guest code.
+Drive fast and clean to fill the cyan-framed meter at the bottom-right of the race
+HUD. When its fill turns white, press **Space** to start the 19.28-second activation
+sequence. The race car update is paused during the cinematic; gameplay and an
+eight-second boost resume together at the musical handoff. The yellow meter shows
+the remaining boost.
 
-* The meter charges above ~70% of full speed and faster above ~90%. Braking,
-  reversing, driving off the road, slowing down and sudden impacts drain it.
-* Music: `assets/turbo_music.mp3` is used automatically; you can also put a
-  `turbo_music.mp3` next to the game files or the launcher, or point
-  `MOPHUN_TURBO_MUSIC` at any file. The sequence plays from 1:49 and is cut so the
-  drop (2:08.28) lands on the exact frame gameplay resumes. Without a music file the
-  cinematic runs on a silent clock.
-* Every value is tunable through `MOPHUN_TURBO_<NAME>` environment variables, one per
-  field of `MoRePhun/turbo/turbo_config.h` (for example
-  `MOPHUN_TURBO_MUSIC_DROP_OFFSET=128.3`, `MOPHUN_TURBO_DURATION=10`,
-  `MOPHUN_TURBO_SPEED_MULTIPLIER=2`, `MOPHUN_TURBO_CINEMATIC_TIME_SCALE=0.1`).
-  `MOPHUN_TURBO_DISABLED=1` removes the feature entirely.
+The low-poly 3D cinematic covers the car and cockpit, the pilot turning and
+smirking, and the hand opening the safety cover and pressing the button. The
+patcher depth-sorts the 3D geometry into a compact 290-frame display list embedded
+in the MPN data segment. It is rendered at 15 FPS with `vFillRect`,
+`vDrawFlatPolygon`, `vSetForeColor`, and `vFlipScreen`. The selected excerpt of the
+recording is transcoded to handset-grade mono PCM WAVE and embedded beside it;
+guest code plays it through `vSoundGetHandle` and `vSoundCtrlEx`. No turbo-specific
+emulator hook, SDL overlay, external runtime asset, virtual input, or virtual clock
+is involved.
 
-Development keys while the game runs: `F1` fill the meter, `F2`/`F5` trigger the
-sequence, `F3` skip the cinematic to the drop, `F4` toggle the debug overlay
-(state, charge, guest speed, shot, offsets), `F6`/`F7` nudge the drop offset by
-0.05 s, `F8`/`F9` scale the slow-motion factor, `F10`/`F11` move the music start
-by 0.25 s. Headless helpers: `MOPHUN_TURBO_DEV_TRIGGER_FRAME=<frame>` auto-triggers,
-`MOPHUN_TURBO_DEV_SHOT_DIRECTORY=<dir>` dumps cinematic frames, and the
-`TurboPreview` tool renders the cinematic offline
-(`build/dev/TurboPreview <out-dir> [step|t1,t2,...]`).
+Build and apply the mod with:
+
+```sh
+ffmpeg -i assets/turbo_music.mp3 -ss 109.0 -t 19.28 -map 0:a:0 -vn \
+  -ac 1 -ar 11025 -c:a pcm_s16le -map_metadata -1 \
+  build/dev/turbo_music_clip.wav
+cmake --build build/dev --target VRally2TurboMod
+build/dev/VRally2TurboMod \
+  '/path/to/VRally2_[RC14EU]_[multiscreen]_M5.mpn' \
+  '/path/to/VRally2_Turbo_[RC14EU]_M5.mpn' \
+  build/dev/turbo_music_clip.wav
+```
+
+Mophun does not support embedding an MP3 *as MIDI*: MIDI contains musical events,
+not recorded audio. PCM WAVE keeps the requested recording and uses the platform's
+native sound-handle API.
+
+The meter charges fastest near maximum road speed. Braking, reversing, driving off
+the road, sustained low speed, and sudden impacts reduce it. The patcher verifies
+the exact executable header and hook signatures before writing an output, so it
+will reject other releases rather than patching unknown code.
 
 ## Development
 

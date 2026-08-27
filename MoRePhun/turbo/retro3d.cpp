@@ -350,6 +350,21 @@ void RetroRenderer::flush()
 	std::stable_sort(queue.begin(), queue.end(), [](const ScreenTriangle& a, const ScreenTriangle& b) {
 		return a.depth > b.depth;
 	});
+	if (triangleSink)
+	{
+		for (const ScreenTriangle& triangle : queue)
+		{
+			RetroScreenTriangle captured;
+			for (int vertex = 0; vertex < 3; ++vertex)
+			{
+				captured.x[vertex] = triangle.v[vertex].position.x;
+				captured.y[vertex] = triangle.v[vertex].position.y;
+			}
+			captured.color = {triangle.v[0].color.r, triangle.v[0].color.g,
+				triangle.v[0].color.b};
+			triangleSink(captured);
+		}
+	}
 	std::vector<SDL_Vertex> vertices;
 	vertices.reserve(queue.size() * 3);
 	for (const ScreenTriangle& triangle : queue)
@@ -358,7 +373,7 @@ void RetroRenderer::flush()
 		vertices.push_back(triangle.v[1]);
 		vertices.push_back(triangle.v[2]);
 	}
-	if (!vertices.empty())
+	if (renderer != nullptr && !vertices.empty())
 	{
 		SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 		SDL_RenderGeometry(renderer, nullptr, vertices.data(), static_cast<int>(vertices.size()), nullptr, 0);
