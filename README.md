@@ -101,14 +101,11 @@ soundtrack continues through the complete eight-second boost and stops with it.
 The patcher applies a one-second fade-out at the end of the embedded recording.
 
 ```sh
-ffmpeg -i assets/turbo_music.mp3 -ss 109.0 -t 27.28 -map 0:a:0 -vn \
-  -ac 1 -ar 11025 -c:a pcm_s16le -map_metadata -1 \
-  build/dev/turbo_music_clip.wav
 cmake --build build/dev --target VRally2TurboMod
 build/dev/VRally2TurboMod \
   '/path/to/VRally2_[RC14EU]_[multiscreen]_M5.mpn' \
   '/path/to/VRally2_Turbo_[RC14EU]_M5.mpn' \
-  build/dev/turbo_music_clip.wav
+  assets/turbo_music_clip.wav
 build/dev/MoRePhun '/path/to/VRally2_Turbo_[RC14EU]_M5.mpn'
 ```
 
@@ -116,12 +113,10 @@ Drive fast and clean to fill the cyan-framed meter. A full white meter is
 ready; press Space to play the native activation sequence, then the yellow
 meter counts down the active boost. During boost, layered exhaust flames flicker
 behind the car while the gameplay framebuffer alternates a one-pixel diagonal
-shake. The patcher depth-sorts the 3D geometry into
-290 guest drawing frames at 15 FPS and embeds them with the transcoded recording.
-At runtime PIP2 code draws the triangles with `vDrawFlatPolygon` and plays the
-PCM WAVE through Mophun's `vSoundGetHandle`/`vSoundCtrlEx` API. MIDI cannot carry
-an MP3 recording, so PCM preserves the actual music while remaining a native
-cartridge asset. Handle-based WAVE playback remains independent of
+shake. The patcher depth-sorts the 3D geometry into 290 guest drawing frames at
+15 FPS and embeds them with the pre-cut, handset-grade PCM recording. At runtime
+PIP2 code draws the triangles with `vDrawFlatPolygon` and plays the WAVE through
+Mophun's `vSoundGetHandle`/`vSoundCtrlEx` API. Handle-based WAVE playback remains independent of
 `vPlayResource`, allowing V-Rally's effects to sound without interrupting the
 turbo track. The shake uses Mophun's standard `vCopyRect` screen-copy API; neither
 effect relies on a turbo-specific host hook.

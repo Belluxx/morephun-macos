@@ -158,29 +158,25 @@ The low-poly 3D cinematic covers the car and cockpit, the pilot turning and
 smirking, and the hand opening the safety cover and pressing the button. The
 patcher depth-sorts the 3D geometry into a compact 290-frame display list embedded
 in the MPN data segment. It is rendered at 15 FPS with `vFillRect`,
-`vDrawFlatPolygon`, `vSetForeColor`, and `vFlipScreen`. The selected excerpt of the
-recording is transcoded to handset-grade mono PCM WAVE and embedded beside it;
-guest code plays it through `vSoundGetHandle` and `vSoundCtrlEx`. This handle-based
-playback domain is independent of `vPlayResource`, so gameplay effects can sound
-without stopping the track. No turbo-specific emulator hook, SDL overlay, external
-runtime asset, virtual input, or virtual clock is involved.
+`vDrawFlatPolygon`, `vSetForeColor`, and `vFlipScreen`. The repository contains only
+the pre-cut, handset-grade mono PCM WAVE excerpt, which the patcher embeds beside
+the frames; guest code plays it through `vSoundGetHandle` and `vSoundCtrlEx`. This
+handle-based playback domain is independent of `vPlayResource`, so gameplay effects
+can sound without stopping the track. No turbo-specific emulator hook, SDL overlay,
+external runtime asset, virtual input, or virtual clock is involved.
 
 Build and apply the mod with:
 
 ```sh
-ffmpeg -i assets/turbo_music.mp3 -ss 109.0 -t 27.28 -map 0:a:0 -vn \
-  -ac 1 -ar 11025 -c:a pcm_s16le -map_metadata -1 \
-  build/dev/turbo_music_clip.wav
 cmake --build build/dev --target VRally2TurboMod
 build/dev/VRally2TurboMod \
   '/path/to/VRally2_[RC14EU]_[multiscreen]_M5.mpn' \
   '/path/to/VRally2_Turbo_[RC14EU]_M5.mpn' \
-  build/dev/turbo_music_clip.wav
+  assets/turbo_music_clip.wav
 ```
 
-Mophun does not support embedding an MP3 *as MIDI*: MIDI contains musical events,
-not recorded audio. PCM WAVE keeps the requested recording and uses the platform's
-native sound-handle API.
+The recording is stored directly as PCM WAVE and uses the platform's native
+sound-handle API; there is no MP3 decoder or MIDI conversion step at runtime.
 
 The meter charges fastest near maximum road speed. Braking, reversing, driving off
 the road, sustained low speed, and sudden impacts reduce it. The patcher verifies

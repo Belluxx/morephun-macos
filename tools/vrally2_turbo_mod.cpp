@@ -1100,7 +1100,7 @@ int main(int argc, char* argv[])
 	if (argc != 4)
 	{
 		std::cerr << "Usage: " << argv[0]
-			<< " <original-vrally2.mpn> <modded-vrally2.mpn> <turbo-build.wav>\n";
+			<< " <original-vrally2.mpn> <modded-vrally2.mpn> <turbo-music.wav>\n";
 		return 2;
 	}
 	try
