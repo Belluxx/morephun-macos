@@ -1,5 +1,4 @@
 #include "cinematic.h"
-#include "turbo_config.h"
 
 #include <algorithm>
 #include <cmath>
@@ -11,6 +10,10 @@ constexpr float CarSpeed = 38.0f;      // metres per second the world scrolls at
 constexpr float WheelRadius = 0.32f;
 constexpr float WheelX = 0.78f;
 constexpr float WheelZ = 1.25f;
+constexpr float CinematicBeats = 32.0f;
+constexpr float NativeFirstBeat = 4.0f;
+constexpr float NativeBeatSpan = CinematicBeats - NativeFirstBeat;
+constexpr float WorldSlowMotion = 0.06f;
 const Vec3 DriverHead(-0.40f, 1.02f, -0.12f);
 const Vec3 WheelCenter(-0.40f, 0.86f, 0.40f);
 constexpr float WheelTilt = -0.42f;    // radians about X; top of the wheel leans toward the driver
@@ -72,63 +75,31 @@ void addOctahedron(Mesh& mesh, const Vec3& center, float radius, const Rgb& colo
 
 } // namespace
 
-Cinematic::Cinematic(const TurboConfig& config, SDL_Renderer* renderer, int width, int height)
-	: config(config), renderer(renderer), width(width), height(height), retro(renderer, width, height)
+Cinematic::Cinematic(double durationSeconds, SDL_Renderer* renderer, int width, int height)
+	: durationSeconds(std::max(0.001, durationSeconds)), renderer(renderer),
+	retro(renderer, width, height)
 {
 	shots = {
-		{"ACTIVATION", 0.0f, 4.0f},
-		{"CAR", 4.0f, 10.0f},
-		{"WHEEL", 10.0f, 13.0f},
-		{"EXHAUST", 13.0f, 16.0f},
-		{"DRIVER", 16.0f, 19.0f},
-		{"HANDS", 19.0f, 22.0f},
-		{"EYES", 22.0f, 23.0f},
-		{"COVER", 23.0f, 26.0f},
-		{"BUTTON", 26.0f, 28.0f},
-		{"INTERIOR", 28.0f, 30.5f},
-		{"EXIT", 30.5f, 32.0f}};
-	cues = {
-		{10.2f, TurboSfx::WheelCreak, 0.5f},
-		{13.4f, TurboSfx::ExhaustPulse, 0.25f},
-		{14.2f, TurboSfx::ExhaustPulse, 0.4f},
-		{14.75f, TurboSfx::ExhaustPulse, 0.55f},
-		{15.2f, TurboSfx::ExhaustPulse, 0.7f},
-		{15.55f, TurboSfx::ExhaustPulse, 0.85f},
-		{15.85f, TurboSfx::ExhaustPulse, 1.0f},
-		{20.3f, TurboSfx::WheelCreak, 0.7f},
-		{22.0f, TurboSfx::Thump, 0.5f},
-		{24.55f, TurboSfx::CoverClick, 1.0f},
-		{26.5f, TurboSfx::ButtonClick, 1.0f},
-		{26.55f, TurboSfx::Ignition, 1.0f},
-		{28.0f, TurboSfx::Whoosh, 0.9f},
-		{30.5f, TurboSfx::Whoosh, 1.0f}};
+		{4.0f, 10.0f},
+		{10.0f, 13.0f},
+		{13.0f, 16.0f},
+		{16.0f, 19.0f},
+		{19.0f, 22.0f},
+		{22.0f, 23.0f},
+		{23.0f, 26.0f},
+		{26.0f, 28.0f},
+		{28.0f, 30.5f},
+		{30.5f, 32.0f}};
 	buildModels();
 }
 
-double Cinematic::dropTime() const
-{
-	return static_cast<double>(config.musicDropOffset - config.musicStartOffset);
-}
-
-double Cinematic::beatLength() const
-{
-	return dropTime() / std::max(1.0f, config.cinematicBeats);
-}
-
-int Cinematic::shotCount() const
-{
-	return static_cast<int>(shots.size());
-}
-
-void Cinematic::begin(const CinematicPalette& newPalette, const SDL_Rect& rect)
+void Cinematic::begin(const CinematicPalette& newPalette)
 {
 	palette = newPalette;
-	carRect = rect;
 	lastTime = 0.0;
 	worldTime = 0.0;
 	lastBeat = -1.0f;
 	smokePuffs.clear();
-	nextPulse = 0;
 	buildModels();
 }
 
@@ -332,11 +303,10 @@ void Cinematic::buildModels()
 
 float Cinematic::worldScale(int shot, float u) const
 {
-	const float slow = config.cinematicTimeScale;
-	if (shot <= 8)
-		return slow;
-	if (shot == 9)
-		return slow + (0.35f - slow) * smoothstep(u);
+	if (shot <= 7)
+		return WorldSlowMotion;
+	if (shot == 8)
+		return WorldSlowMotion + (0.35f - WorldSlowMotion) * smoothstep(u);
 	return 0.35f + (1.0f - 0.35f) * smoothstep(u);
 }
 
@@ -355,24 +325,12 @@ int Cinematic::shotAt(float beat, float& u) const
 	return static_cast<int>(shots.size()) - 1;
 }
 
-void Cinematic::fireCues(float previousBeat, float beat)
+void Cinematic::updateSmokePuffs(float previousBeat, float beat)
 {
-	for (const SoundCue& cue : cues)
-	{
-		if (cue.beat > previousBeat && cue.beat <= beat)
-		{
-			if (sfxHandler)
-				sfxHandler(cue.effect, cue.gain);
-			if (cue.effect == TurboSfx::ExhaustPulse)
-				smokePuffs.push_back(worldTime);
-		}
-	}
-	if (loopHandler)
-	{
-		// Engine rumble rises with the build-up; jumps after the button press.
-		const float base = 0.18f + 0.45f * std::min(1.0f, beat / 32.0f);
-		loopHandler(TurboLoop::EngineRumble, beat >= 26.5f ? base + 0.35f : base);
-	}
+	static const float pulseBeats[] = {13.4f, 14.2f, 14.75f, 15.2f, 15.55f, 15.85f};
+	for (float pulseBeat : pulseBeats)
+		if (pulseBeat > previousBeat && pulseBeat <= beat)
+			smokePuffs.push_back(worldTime);
 }
 
 void Cinematic::animationParameters(float beat, float& thumb, float& cover, float& press, float& smirk,
@@ -392,7 +350,7 @@ Camera Cinematic::cameraFor(int shot, float u, float beat) const
 	const float wobble = static_cast<float>(worldTime);
 	switch (shot)
 	{
-		case 1: // Three-quarter orbit along the rear-left -> front-right diagonal.
+		case 0: // Three-quarter orbit along the rear-left -> front-right diagonal.
 		{
 			// Start behind the rear-left corner, drift toward the left flank.
 			const float angle = -2.45f + 0.50f * smoothstep(u);
@@ -402,12 +360,12 @@ Camera Cinematic::cameraFor(int shot, float u, float beat) const
 			camera.verticalFov = 50.0f;
 			break;
 		}
-		case 2: // Rear-left wheel.
+		case 1: // Rear-left wheel.
 			camera.position = {-2.05f + 0.25f * u, 0.42f + 0.10f * u, -2.55f + 0.45f * u};
 			camera.target = {-WheelX + 0.1f, WheelRadius + 0.08f, -WheelZ + 0.1f};
 			camera.verticalFov = 44.0f;
 			break;
-		case 3: // Exhaust.
+		case 2: // Exhaust.
 		{
 			const float tremor = 0.004f + 0.012f * u;
 			camera.position = {-1.35f + 0.25f * u, 0.34f + 0.04f * u, -3.6f + 0.3f * u};
@@ -416,24 +374,24 @@ Camera Cinematic::cameraFor(int shot, float u, float beat) const
 			camera.verticalFov = 36.0f;
 		}
 			break;
-		case 4: // Driver profile from the passenger seat, framed below the eyes.
+		case 3: // Driver profile from the passenger seat, framed below the eyes.
 			// Three-quarter view from the passenger side of the dashboard so the
 			// smirk reads; framed from just below the eyes to the chest.
 			camera.position = {0.34f - 0.03f * u, 0.99f, 0.24f};
 			camera.target = {DriverHead.x, 0.885f + 0.012f * u, DriverHead.z + 0.02f};
 			camera.verticalFov = 33.0f;
 			break;
-		case 5: // Hands on the wheel, over the right shoulder.
+		case 4: // Hands on the wheel, over the right shoulder.
 			camera.position = {-0.08f - 0.03f * u, 1.24f, -0.04f};
 			camera.target = wheelSpace().apply({0.05f, 0.02f, 0.0f});
 			camera.verticalFov = 44.0f;
 			break;
-		case 6: // Eyes.
+		case 5: // Eyes.
 			camera.position = {DriverHead.x + 0.04f, DriverHead.y + 0.05f, DriverHead.z + 0.56f};
 			camera.target = {DriverHead.x, DriverHead.y + 0.04f, DriverHead.z};
 			camera.verticalFov = 21.0f;
 			break;
-		case 7: // Safety cover, extreme close-up.
+		case 6: // Safety cover, extreme close-up.
 		{
 			const Vec3 module = wheelSpace().apply({0.105f, 0.0f, -0.02f});
 			camera.position = wheelSpace().apply({0.02f + 0.02f * u, 0.11f, -0.20f});
@@ -441,7 +399,7 @@ Camera Cinematic::cameraFor(int shot, float u, float beat) const
 			camera.verticalFov = 30.0f - 4.0f * u;
 			break;
 		}
-		case 8: // Button press with a little shake.
+		case 7: // Button press with a little shake.
 		{
 			const Vec3 module = wheelSpace().apply({0.105f, 0.0f, -0.02f});
 			const float shake = std::max(0.0f, 1.0f - (beat - 26.5f) / 1.2f) * (beat >= 26.5f ? 1.0f : 0.0f);
@@ -451,7 +409,7 @@ Camera Cinematic::cameraFor(int shot, float u, float beat) const
 			camera.verticalFov = 30.0f;
 			break;
 		}
-		case 9: // Rapid travel backward through the cabin toward the rear window.
+		case 8: // Rapid travel backward through the cabin toward the rear window.
 		{
 			const float e = u * u;
 			camera.position = lerp({-0.18f, 1.02f, 0.28f}, {0.0f, 1.08f, -1.35f}, e);
@@ -459,7 +417,7 @@ Camera Cinematic::cameraFor(int shot, float u, float beat) const
 			camera.verticalFov = 60.0f + 20.0f * e;
 			break;
 		}
-		case 10: // Out through the rear window, whip around into the chase camera.
+		case 9: // Out through the rear window, whip around into the chase camera.
 		{
 			const float e = smoothstep(u);
 			const float yaw = Pi * e; // 0 = looking backward, Pi = looking forward
@@ -706,75 +664,17 @@ void Cinematic::drawDriver(float beat)
 	retro.submit(hands, wheelPose);
 }
 
-void Cinematic::drawGameShot(SDL_Texture* snapshot, float u, float beat)
+void Cinematic::render(double t)
 {
-	(void)beat;
-	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-	SDL_RenderClear(renderer);
-	if (snapshot == nullptr)
-		return;
-	// Slow push-in on the car with a hint of tilt: the camera "begins moving".
-	const float scale = 1.0f + 0.30f * smoothstep(u);
-	const float anchorX = carRect.w > 0 ? carRect.x + carRect.w * 0.5f : width * 0.5f;
-	const float anchorY = carRect.h > 0 ? carRect.y + carRect.h * 0.45f : height * 0.8f;
-	SDL_Rect destination;
-	destination.w = static_cast<int>(std::lround(width * scale));
-	destination.h = static_cast<int>(std::lround(height * scale));
-	destination.x = static_cast<int>(std::lround(anchorX - anchorX * scale));
-	destination.y = static_cast<int>(std::lround(anchorY - anchorY * scale + 4.0f * smoothstep(u)));
-	SDL_SetTextureBlendMode(snapshot, SDL_BLENDMODE_NONE);
-	SDL_RenderCopyEx(renderer, snapshot, nullptr, &destination, -1.6 * smoothstep(u), nullptr, SDL_FLIP_NONE);
-	// Letterbox bars grow in.
-	const int bars = static_cast<int>(std::lround(12.0f * smoothstep(u * 1.5f)));
-	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
-	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-	SDL_Rect top = {0, 0, width, bars};
-	SDL_Rect bottom = {0, height - bars, width, bars};
-	SDL_RenderFillRect(renderer, &top);
-	SDL_RenderFillRect(renderer, &bottom);
-	// Drifting dust motes.
-	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-	for (int i = 0; i < 18; ++i)
-	{
-		const float phase = static_cast<float>(worldTime) * 0.5f + i * 0.61f;
-		const float x = std::fmod(i * 37.0f + std::sin(phase) * 6.0f + static_cast<float>(worldTime) * 3.0f, static_cast<float>(width));
-		const float y = std::fmod(i * 53.0f + static_cast<float>(worldTime) * (4.0f + i % 3), static_cast<float>(height));
-		SDL_SetRenderDrawColor(renderer, 250, 236, 200, static_cast<Uint8>(90 + (i % 4) * 30));
-		SDL_RenderDrawPoint(renderer, static_cast<int>(x), static_cast<int>(y));
-	}
-	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
-}
-
-CinematicFrame Cinematic::render(double t, SDL_Texture* gameSnapshot)
-{
-	CinematicFrame frame;
-	// The native guest cannot capture and transform the live game framebuffer on
-	// every Mophun device.  Its serialized 3D sequence therefore drops the
-	// snapshot-only activation shot and retimes the remaining 28 beats over the
-	// same music interval.
-	const float beat = guestExport
-		? 4.0f + static_cast<float>(t / dropTime()) * 28.0f
-		: static_cast<float>(t / beatLength());
+	const float beat = NativeFirstBeat +
+		static_cast<float>(t / durationSeconds) * NativeBeatSpan;
 	float u = 0.0f;
 	const int shot = shotAt(beat, u);
 	const double dt = std::max(0.0, t - lastTime);
 	worldTime += dt * worldScale(shot, u);
 	lastTime = t;
-	fireCues(lastBeat, beat);
+	updateSmokePuffs(lastBeat, beat);
 	lastBeat = beat;
-
-	frame.shotIndex = shot;
-	frame.shotName = shots[shot].name;
-	frame.finished = t >= dropTime();
-	frame.gameTimeScale = 0.0f;
-	frame.gameBlend = 0.0f;
-
-	if (shot == 0)
-	{
-		frame.gameTimeScale = config.activationTimeScale * (1.0f - 0.7f * smoothstep(u));
-		drawGameShot(gameSnapshot, u, beat);
-		return frame;
-	}
 
 	RenderSettings settings;
 	settings.lightDirection = {0.35f, 1.0f, -0.45f};
@@ -782,7 +682,7 @@ CinematicFrame Cinematic::render(double t, SDL_Texture* gameSnapshot)
 	settings.fogColor = palette.horizon;
 	settings.fogStart = 40.0f;
 	settings.fogEnd = 260.0f;
-	const bool interiorShot = shot >= 4 && shot <= 9;
+	const bool interiorShot = shot >= 3 && shot <= 8;
 	if (interiorShot)
 		settings.ambient = 0.62f;
 
@@ -792,13 +692,13 @@ CinematicFrame Cinematic::render(double t, SDL_Texture* gameSnapshot)
 
 	const Camera camera = cameraFor(shot, u, beat);
 	retro.begin(camera, settings);
-	drawWorld(beat, interiorShot && shot != 9);
-	if (shot == 9 || shot == 10)
+	drawWorld(beat, interiorShot && shot != 8);
+	if (shot == 8 || shot == 9)
 	{
 		// Interior plus exterior so the exit through the rear window is continuous.
 		drawInterior(beat);
 		drawDriver(beat);
-		drawCar(beat, shot == 10 && u > 0.2f);
+		drawCar(beat, shot == 9 && u > 0.2f);
 	}
 	else if (interiorShot)
 	{
@@ -808,33 +708,17 @@ CinematicFrame Cinematic::render(double t, SDL_Texture* gameSnapshot)
 	else
 	{
 		drawCar(beat, true);
-		if (shot == 3)
+		if (shot == 2)
 			drawSmoke();
 	}
 	retro.flush();
 
 	// Button-press flash.
-	if (shot == 8 && beat >= 26.5f && beat < 26.72f)
+	if (shot == 7 && beat >= 26.5f && beat < 26.72f)
 	{
 		SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(renderer, 255, 240, 200, static_cast<Uint8>(200 * (1.0f - (beat - 26.5f) / 0.22f)));
 		SDL_RenderFillRect(renderer, nullptr);
 		SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 	}
-
-	if (shot == 10)
-	{
-		frame.gameTimeScale = 0.25f + 0.75f * smoothstep(u);
-		const float blend = ramp(u, 0.62f, 1.0f);
-		frame.gameBlend = blend;
-		if (gameSnapshot != nullptr && blend > 0.0f)
-		{
-			SDL_SetTextureBlendMode(gameSnapshot, SDL_BLENDMODE_BLEND);
-			SDL_SetTextureAlphaMod(gameSnapshot, static_cast<Uint8>(255 * blend));
-			SDL_RenderCopy(renderer, gameSnapshot, nullptr, nullptr);
-			SDL_SetTextureAlphaMod(gameSnapshot, 255);
-			SDL_SetTextureBlendMode(gameSnapshot, SDL_BLENDMODE_NONE);
-		}
-	}
-	return frame;
 }

@@ -108,9 +108,8 @@ struct RenderSettings {
 	float nearPlane = 0.04f;
 };
 
-// Screen-space output from the software 3D pipeline.  The native MPN patcher
-// uses this sink to serialize the very same depth-sorted, flat-shaded
-// triangles that TurboPreview sends to SDL.
+// Screen-space output from the offline software 3D pipeline. The native MPN
+// patcher serializes these depth-sorted, flat-shaded triangles into guest data.
 struct RetroScreenTriangle {
 	float x[3] = {0, 0, 0};
 	float y[3] = {0, 0, 0};

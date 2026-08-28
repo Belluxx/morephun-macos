@@ -75,8 +75,8 @@ endfunction()
 # MoRePhun
 file(GLOB_RECURSE MOREPHUN_SOURCES MoRePhun/*.cpp)
 file(GLOB_RECURSE MOREPHUN_HEADERS MoRePhun/*.h)
-# Turbo gameplay is injected into the guest MPN by VRally2TurboMod. The legacy
-# host renderer remains available only to the standalone TurboPreview target.
+# Native turbo gameplay is injected into the guest MPN by VRally2TurboMod. Its
+# offline cinematic generator is not part of the emulator runtime.
 list(FILTER MOREPHUN_SOURCES EXCLUDE REGEX "/turbo/")
 list(FILTER MOREPHUN_HEADERS EXCLUDE REGEX "/turbo/")
 
@@ -198,15 +198,6 @@ add_executable(VRally2TurboMod
 	MoRePhun/turbo/retro3d.cpp)
 target_include_directories(VRally2TurboMod PRIVATE MoRePhun)
 target_link_libraries(VRally2TurboMod PRIVATE ${MOPHUN_SDL_TARGET})
-
-# Offline renderer for tuning the turbo cinematic (no game data needed).
-add_executable(TurboPreview
-	tools/turbo_preview.cpp
-	MoRePhun/turbo/cinematic.cpp
-	MoRePhun/turbo/retro3d.cpp
-	MoRePhun/turbo/turbo_config.cpp)
-target_include_directories(TurboPreview PRIVATE MoRePhun)
-target_link_libraries(TurboPreview PRIVATE ${MOPHUN_SDL_TARGET})
 
 if(BUILD_TESTING)
 	if(TARGET VRally2Standalone)

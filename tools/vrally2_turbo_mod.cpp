@@ -1,6 +1,5 @@
 #include "binary_io.h"
 #include "turbo/cinematic.h"
-#include "turbo/turbo_config.h"
 #include "opcodes.h"
 #include "pool.h"
 #include "registers.h"
@@ -391,11 +390,10 @@ std::vector<uint8_t> buildTurboCinematic()
 
 	uint64_t triangleCount = 0;
 	{
-		TurboConfig config;
-		Cinematic cinematic(config, renderer, 128, 160);
+		Cinematic cinematic(static_cast<double>(CinematicDurationMs) / 1000.0,
+			renderer, 128, 160);
 		CinematicPalette palette;
-		cinematic.begin(palette, {0, 0, 0, 0});
-		cinematic.setGuestExport(true);
+		cinematic.begin(palette);
 
 		for (uint32_t index = 0; index < CinematicFrameCount; ++index)
 		{
@@ -410,7 +408,7 @@ std::vector<uint8_t> buildTurboCinematic()
 			});
 
 			const double time = static_cast<double>(index) / CinematicFrameRate;
-			cinematic.render(time, nullptr);
+			cinematic.render(time);
 			const double beat = 4.0 + time * 28.0 /
 				(static_cast<double>(CinematicDurationMs) / 1000.0);
 			if (beat >= 26.5 && beat < 26.72)

@@ -5,9 +5,6 @@
 #include <vector>
 
 #include "retro3d.h"
-#include "turbo_audio.h"
-
-struct TurboConfig;
 
 // Colours sampled from the live game frame so the 3D shots match the track.
 struct CinematicPalette {
@@ -20,61 +17,29 @@ struct CinematicPalette {
 	Rgb mountain{120, 140, 200};
 };
 
-struct CinematicFrame {
-	int shotIndex = 0;
-	const char* shotName = "";
-	float gameTimeScale = 0.0f; // clock factor the guest should run at right now
-	float gameBlend = 0.0f;     // 1 = the presented image is the live game frame
-	bool finished = false;      // the drop has been reached
-};
-
-// The turbo activation sequence. Time is expressed in seconds since the music
-// started; the drop lands at dropTime(). Shots are laid out in beats so that
-// changing the drop offset retimes the whole sequence.
+// Offline 3D frame generator used by VRally2TurboMod. It has no access to the
+// running game or emulator state; rendered triangles are serialized into the MPN.
 class Cinematic {
 	public:
-		Cinematic(const TurboConfig& config, SDL_Renderer* renderer, int width, int height);
+		Cinematic(double durationSeconds, SDL_Renderer* renderer, int width, int height);
 
-		void begin(const CinematicPalette& palette, const SDL_Rect& carRect);
-		double dropTime() const;
-		double beatLength() const;
-		int shotCount() const;
-		// The embedded guest sequence has no live SDL game snapshot.  It starts at
-		// the first fully 3D shot and stretches shots 2-11 across the music build.
-		void setGuestExport(bool enabled) { guestExport = enabled; }
+		void begin(const CinematicPalette& palette);
 		void setTriangleSink(std::function<void(const RetroScreenTriangle&)> sink)
 		{
 			retro.setTriangleSink(std::move(sink));
 		}
-		// Renders the frame for time t into the current render target. The game
-		// snapshot is used by the first and last shots.
-		CinematicFrame render(double t, SDL_Texture* gameSnapshot);
-
-		void setSfxHandler(std::function<void(TurboSfx, float)> handler) { sfxHandler = handler; }
-		void setLoopHandler(std::function<void(TurboLoop, float)> handler) { loopHandler = handler; }
+		void render(double timeSeconds);
 
 	private:
 		struct Shot {
-			const char* name;
 			float startBeat;
 			float endBeat;
 		};
-		struct SoundCue {
-			float beat;
-			TurboSfx effect;
-			float gain;
-		};
-		const TurboConfig& config;
+		double durationSeconds;
 		SDL_Renderer* renderer;
-		int width;
-		int height;
 		RetroRenderer retro;
 		CinematicPalette palette;
-		SDL_Rect carRect{0, 0, 0, 0};
 		std::vector<Shot> shots;
-		std::vector<SoundCue> cues;
-		std::function<void(TurboSfx, float)> sfxHandler;
-		std::function<void(TurboLoop, float)> loopHandler;
 
 		// Static geometry (car-local space, +Z forward, +Y up, +X right).
 		Mesh carBody;
@@ -90,15 +55,12 @@ class Cinematic {
 		double worldTime = 0.0;
 		float lastBeat = -1.0f;
 		std::vector<double> smokePuffs;
-		int nextPulse = 0;
-		bool guestExport = false;
 
 		void buildModels();
 		float worldScale(int shot, float u) const;
 		int shotAt(float beat, float& u) const;
-		void fireCues(float previousBeat, float beat);
+		void updateSmokePuffs(float previousBeat, float beat);
 
-		void drawGameShot(SDL_Texture* snapshot, float u, float beat);
 		void drawWorld(float beat, bool interiorView);
 		void drawCar(float beat, bool withRearGlass);
 		void drawInterior(float beat);

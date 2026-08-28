@@ -47,14 +47,6 @@ Video::Video()
 	}
 
 	SDL_SetTextureBlendMode(app.framebuffer, SDL_BLENDMODE_NONE);
-	app.snapshot = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_RGBA8888,
-		SDL_TEXTUREACCESS_TARGET, SCREEN_WIDTH, SCREEN_HEIGHT);
-	app.composite = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_RGBA8888,
-		SDL_TEXTUREACCESS_TARGET, SCREEN_WIDTH, SCREEN_HEIGHT);
-	if (app.snapshot != nullptr)
-		SDL_SetTextureBlendMode(app.snapshot, SDL_BLENDMODE_NONE);
-	if (app.composite != nullptr)
-		SDL_SetTextureBlendMode(app.composite, SDL_BLENDMODE_NONE);
 	SDL_SetRenderTarget(app.renderer, app.framebuffer);
 	SDL_SetRenderDrawColor(app.renderer, 0, 0, 0, 255);
 	SDL_RenderClear(app.renderer);
@@ -62,41 +54,13 @@ Video::Video()
 
 Video::~Video()
 {
-	if (app.composite != nullptr)
-		SDL_DestroyTexture(app.composite);
-	if (app.snapshot != nullptr)
-		SDL_DestroyTexture(app.snapshot);
 	SDL_DestroyTexture(app.framebuffer);
 	SDL_DestroyRenderer(app.renderer);
 	SDL_DestroyWindow(app.window);
 	SDL_Quit();
 }
 
-void Video::beginHostTarget(SDL_Texture* target)
-{
-	savedClipEnabled = SDL_RenderIsClipEnabled(app.renderer) == SDL_TRUE;
-	if (savedClipEnabled)
-		SDL_RenderGetClipRect(app.renderer, &savedClip);
-	SDL_SetRenderTarget(app.renderer, target);
-	SDL_RenderSetClipRect(app.renderer, nullptr);
-}
-
-void Video::restoreGuestTarget()
-{
-	SDL_SetRenderTarget(app.renderer, app.framebuffer);
-	SDL_RenderSetClipRect(app.renderer, savedClipEnabled ? &savedClip : nullptr);
-}
-
-void Video::captureSnapshot()
-{
-	if (app.snapshot == nullptr)
-		return;
-	beginHostTarget(app.snapshot);
-	SDL_RenderCopy(app.renderer, app.framebuffer, nullptr, nullptr);
-	restoreGuestTarget();
-}
-
-void Video::present(const char* screenshotPath, SDL_Texture* source)
+void Video::present(const char* screenshotPath)
 {
 	SDL_Rect drawingClip{};
 	const SDL_bool drawingClipEnabled = SDL_RenderIsClipEnabled(app.renderer);
@@ -107,7 +71,7 @@ void Video::present(const char* screenshotPath, SDL_Texture* source)
 	SDL_RenderSetClipRect(app.renderer, nullptr);
 	SDL_SetRenderDrawColor(app.renderer, 0, 0, 0, 255);
 	SDL_RenderClear(app.renderer);
-	SDL_RenderCopy(app.renderer, source != nullptr ? source : app.framebuffer, nullptr, nullptr);
+	SDL_RenderCopy(app.renderer, app.framebuffer, nullptr, nullptr);
 
 	if (screenshotPath != nullptr)
 	{
