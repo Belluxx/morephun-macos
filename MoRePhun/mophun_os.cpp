@@ -96,6 +96,7 @@ MophunOS::~MophunOS()
 	}
 
 	delete mophunVM;
+	delete soundAudio;
 	delete audio;
 	delete video;
 	delete input;

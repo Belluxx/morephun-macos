@@ -27,7 +27,10 @@ class MophunOS {
 		MophunVM* mophunVM = new MophunVM();
 		Video* video = new Video();
 		Input* input = new Input();
+		// vPlayResource and the handle-based vSound API are independent Mophun
+		// playback domains. Keeping separate backends lets their audio coexist.
 		Audio* audio = new Audio();
+		Audio* soundAudio = new Audio();
 		OSData osdata;
 		Storage storage;
 		DevTools devtools;

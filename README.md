@@ -96,10 +96,12 @@ On Linux, add `-DMOPHUN_REQUIRE_FLUIDSYNTH=ON` to the first command if you want 
 HUD, 19.28-second low-poly 3D cinematic, soundtrack, race pause, and boost all
 execute from the patched cartridge; the emulator has no turbo-specific runtime
 hooks. The cinematic shows the car and cockpit, a pilot close-up with an animated
-smirk, and the hand opening the safety cover and pressing the turbo button.
+smirk, and the hand opening the safety cover and pressing the turbo button. The
+soundtrack continues through the complete eight-second boost and stops with it.
+The patcher applies a one-second fade-out at the end of the embedded recording.
 
 ```sh
-ffmpeg -i assets/turbo_music.mp3 -ss 109.0 -t 19.28 -map 0:a:0 -vn \
+ffmpeg -i assets/turbo_music.mp3 -ss 109.0 -t 27.28 -map 0:a:0 -vn \
   -ac 1 -ar 11025 -c:a pcm_s16le -map_metadata -1 \
   build/dev/turbo_music_clip.wav
 cmake --build build/dev --target VRally2TurboMod
@@ -119,8 +121,10 @@ shake. The patcher depth-sorts the 3D geometry into
 At runtime PIP2 code draws the triangles with `vDrawFlatPolygon` and plays the
 PCM WAVE through Mophun's `vSoundGetHandle`/`vSoundCtrlEx` API. MIDI cannot carry
 an MP3 recording, so PCM preserves the actual music while remaining a native
-cartridge asset. The shake uses Mophun's standard `vCopyRect` screen-copy API;
-neither effect relies on a turbo-specific host hook.
+cartridge asset. Handle-based WAVE playback remains independent of
+`vPlayResource`, allowing V-Rally's effects to sound without interrupting the
+turbo track. The shake uses Mophun's standard `vCopyRect` screen-copy API; neither
+effect relies on a turbo-specific host hook.
 
 ## Credits
 

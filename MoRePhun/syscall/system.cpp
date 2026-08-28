@@ -328,7 +328,7 @@ void MophunOS::vSoundCtrlEx()
 	auto found = osdata.soundSlots.find(handle);
 	if (command == stop)
 	{
-		audio->stop();
+		soundAudio->stop();
 		mophunVM->writeReg(r0, 0);
 		return;
 	}
@@ -347,7 +347,7 @@ void MophunOS::vSoundCtrlEx()
 	const bool loop = (parameters & 0xffffU) == 0xffffU;
 	std::string error;
 	const SoundSlot& sound = found->second;
-	if (!audio->playWave(mophunVM->getRamAddress(sound.address), sound.size, loop, error))
+	if (!soundAudio->playWave(mophunVM->getRamAddress(sound.address), sound.size, loop, error))
 	{
 		if (std::getenv("MOPHUN_DISABLE_AUDIO") == nullptr)
 			std::cerr << "Wave playback failed: " << error << std::endl;
@@ -374,7 +374,7 @@ void MophunOS::vSoundDisposeHandle()
 		mophunVM->writeReg(r0, static_cast<uint32_t>(-1));
 		return;
 	}
-	audio->stop();
+	soundAudio->stop();
 	osdata.soundSlots.erase(found);
 	mophunVM->writeReg(r0, 0);
 }

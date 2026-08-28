@@ -32,6 +32,11 @@ constexpr uint32_t CarUpdateCodeOffset = 0x3dc4;
 constexpr uint32_t TurboStateSize = 76;
 constexpr uint32_t CinematicFrameRate = 15;
 constexpr uint32_t CinematicDurationMs = 19280;
+constexpr uint32_t BoostFrameCount = 120;
+constexpr uint32_t BoostDurationMs = 8000;
+constexpr uint32_t TurboMusicDurationMs = CinematicDurationMs + BoostDurationMs;
+constexpr uint32_t TurboMusicSampleRate = 11025;
+constexpr uint32_t TurboMusicFadeMs = 1000;
 constexpr uint32_t CinematicFrameCount =
 	(CinematicDurationMs * CinematicFrameRate + 999) / 1000;
 
@@ -496,13 +501,49 @@ double validateTurboWave(const std::vector<uint8_t>& wave)
 			dataSize = chunkSize;
 		offset = next;
 	}
-	if (format != 1 || channels != 1 || sampleRate != 11025 || bits != 16 || dataSize == 0)
+	if (format != 1 || channels != 1 || sampleRate != TurboMusicSampleRate ||
+		bits != 16 || dataSize == 0)
 		throw std::runtime_error("Turbo music must be 11025 Hz, mono, 16-bit PCM WAVE");
 	const double duration = static_cast<double>(dataSize) /
 		(static_cast<double>(sampleRate) * channels * (bits / 8));
-	if (duration < 19.20 || duration > 19.36)
-		throw std::runtime_error("Turbo music WAVE must contain the 19.28-second build-up");
+	const double expectedDuration = static_cast<double>(TurboMusicDurationMs) / 1000.0;
+	if (duration < expectedDuration - 0.08 || duration > expectedDuration + 0.08)
+		throw std::runtime_error(
+			"Turbo music WAVE must span the complete cinematic and boost");
 	return duration;
+}
+
+void applyTurboMusicFade(std::vector<uint8_t>& wave)
+{
+	uint32_t dataOffset = 0;
+	uint32_t dataSize = 0;
+	for (size_t offset = 12; offset + 8 <= wave.size();)
+	{
+		const uint32_t chunkSize = readLittleU32(wave.data() + offset + 4);
+		if (std::string(reinterpret_cast<const char*>(wave.data() + offset), 4) == "data")
+		{
+			dataOffset = static_cast<uint32_t>(offset + 8);
+			dataSize = chunkSize;
+			break;
+		}
+		offset += 8U + chunkSize + (chunkSize & 1U);
+	}
+	if (dataSize < 2 || dataOffset > wave.size() || dataSize > wave.size() - dataOffset)
+		throw std::runtime_error("Turbo music WAVE has no usable PCM data chunk");
+
+	const uint32_t sampleCount = dataSize / sizeof(int16_t);
+	const uint32_t fadeSamples = std::min(sampleCount,
+		TurboMusicSampleRate * TurboMusicFadeMs / 1000U);
+	const uint32_t firstFadeSample = sampleCount - fadeSamples;
+	for (uint32_t index = 0; index < fadeSamples; ++index)
+	{
+		const uint32_t sampleOffset = dataOffset + (firstFadeSample + index) * 2U;
+		const int16_t sample = static_cast<int16_t>(readLittleU16(wave.data() + sampleOffset));
+		const int32_t remaining = static_cast<int32_t>(fadeSamples - index - 1U);
+		const int16_t faded = static_cast<int16_t>(
+			static_cast<int32_t>(sample) * remaining / static_cast<int32_t>(fadeSamples));
+		writeLittleU16(wave.data() + sampleOffset, static_cast<uint16_t>(faded));
+	}
 }
 
 void requireTargetHeader(const VMGPHeader& header)
@@ -675,6 +716,9 @@ std::vector<uint8_t> buildGuestCode(uint32_t originalUpdatePoolId,
 	assembler.branchImmediate(BGTI, s4, 0, "TurboFinish");
 	assembler.ldq(r0, 0);
 	assembler.immediate(STWd, r0, s0, StatePhase);
+	assembler.immediate(LDWd, p0, s0, StateSoundHandle);
+	assembler.ldq(p1, 2); // SNDCTRL_STOP: music ends with the boost, not the cinematic
+	assembler.callPool(soundCtrlPoolId); // vSoundCtrl
 
 	assembler.label("TurboFinish");
 	assembler.immediate(STWd, s2, s0, StatePreviousKeys);
@@ -683,6 +727,12 @@ std::vector<uint8_t> buildGuestCode(uint32_t originalUpdatePoolId,
 	assembler.op(RET, s7, s6);
 
 	assembler.label("TurboReset");
+	assembler.immediate(LDWd, r0, s0, StatePhase);
+	assembler.branchImmediate(BEQI, r0, 0, "TurboResetClear");
+	assembler.immediate(LDWd, p0, s0, StateSoundHandle);
+	assembler.ldq(p1, 2); // stop a cinematic/boost interrupted by leaving the race
+	assembler.callPool(soundCtrlPoolId); // vSoundCtrl
+	assembler.label("TurboResetClear");
 	assembler.ldq(p0, TurboStateSize);
 	assembler.op(SYSSET, s0, zero, p0);
 	assembler.op(RET, s7, s6);
@@ -766,11 +816,8 @@ std::vector<uint8_t> buildGuestCode(uint32_t originalUpdatePoolId,
 	assembler.branch(BLT, s2, p0, "CinematicReturn");
 	assembler.ldq(r0, 2);
 	assembler.immediate(STWd, r0, s0, StatePhase);
-	assembler.ldq(r0, 120); // eight seconds at V-Rally's 15 Hz race update
+	assembler.ldq(r0, BoostFrameCount); // eight seconds at V-Rally's 15 Hz race update
 	assembler.immediate(STWd, r0, s0, StateActiveFrames);
-	assembler.immediate(LDWd, p0, s0, StateSoundHandle);
-	assembler.ldq(p1, 2); // SNDCTRL_STOP
-	assembler.callPool(soundCtrlPoolId); // vSoundCtrl
 	assembler.label("CinematicReturn");
 	assembler.op(RET, s7, s6);
 
@@ -937,6 +984,8 @@ std::vector<uint8_t> buildModdedMpn(std::vector<uint8_t> input,
 	const std::vector<uint8_t>& turboWave)
 {
 	const double waveDuration = validateTurboWave(turboWave);
+	std::vector<uint8_t> fadedTurboWave = turboWave;
+	applyTurboMusicFade(fadedTurboWave);
 	const VMGPHeader header = decodeVMGPHeader(input.data());
 	requireTargetHeader(header);
 	std::string decryptError;
@@ -975,7 +1024,7 @@ std::vector<uint8_t> buildModdedMpn(std::vector<uint8_t> input,
 	const std::vector<uint8_t> cinematic = buildTurboCinematic();
 	std::vector<uint8_t> nativeData;
 	const uint32_t turboWaveOffset = header.dataSize;
-	nativeData.insert(nativeData.end(), turboWave.begin(), turboWave.end());
+	nativeData.insert(nativeData.end(), fadedTurboWave.begin(), fadedTurboWave.end());
 	while (nativeData.size() % sizeof(uint32_t) != 0)
 		nativeData.push_back(0);
 	const uint32_t cinematicOffset = header.dataSize + static_cast<uint32_t>(nativeData.size());
@@ -1041,7 +1090,8 @@ std::vector<uint8_t> buildModdedMpn(std::vector<uint8_t> input,
 		header.stringSize + static_cast<uint32_t>(nativeStrings.size()));
 	std::cout << "Embedded native cinematic: " << CinematicFrameCount << " frames at "
 		<< CinematicFrameRate << " FPS (" << cinematic.size() << " bytes), PCM WAVE "
-		<< turboWave.size() << " bytes / " << waveDuration << " seconds\n";
+		<< fadedTurboWave.size() << " bytes / " << waveDuration
+		<< " seconds with a one-second fade-out\n";
 	return output;
 }
 

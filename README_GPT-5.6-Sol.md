@@ -149,9 +149,10 @@ Drive fast and clean to fill the cyan-framed meter at the bottom-right of the ra
 HUD. When its fill turns white, press **Space** to start the 19.28-second activation
 sequence. The race car update is paused during the cinematic; gameplay and an
 eight-second boost resume together at the musical handoff. The yellow meter shows
-the remaining boost. Two layered exhaust flames alternate behind the car during
-boost, while a one-pixel diagonal shake is applied through the standard Mophun
-`vCopyRect` screen-copy call.
+the remaining boost, and the music continues until that meter expires, fading over
+its final second. Two layered exhaust flames alternate behind the car during boost,
+while a one-pixel diagonal shake is applied through the standard Mophun `vCopyRect`
+screen-copy call.
 
 The low-poly 3D cinematic covers the car and cockpit, the pilot turning and
 smirking, and the hand opening the safety cover and pressing the button. The
@@ -159,14 +160,15 @@ patcher depth-sorts the 3D geometry into a compact 290-frame display list embedd
 in the MPN data segment. It is rendered at 15 FPS with `vFillRect`,
 `vDrawFlatPolygon`, `vSetForeColor`, and `vFlipScreen`. The selected excerpt of the
 recording is transcoded to handset-grade mono PCM WAVE and embedded beside it;
-guest code plays it through `vSoundGetHandle` and `vSoundCtrlEx`. No turbo-specific
-emulator hook, SDL overlay, external runtime asset, virtual input, or virtual clock
-is involved.
+guest code plays it through `vSoundGetHandle` and `vSoundCtrlEx`. This handle-based
+playback domain is independent of `vPlayResource`, so gameplay effects can sound
+without stopping the track. No turbo-specific emulator hook, SDL overlay, external
+runtime asset, virtual input, or virtual clock is involved.
 
 Build and apply the mod with:
 
 ```sh
-ffmpeg -i assets/turbo_music.mp3 -ss 109.0 -t 19.28 -map 0:a:0 -vn \
+ffmpeg -i assets/turbo_music.mp3 -ss 109.0 -t 27.28 -map 0:a:0 -vn \
   -ac 1 -ar 11025 -c:a pcm_s16le -map_metadata -1 \
   build/dev/turbo_music_clip.wav
 cmake --build build/dev --target VRally2TurboMod
