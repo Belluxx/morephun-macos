@@ -22,6 +22,7 @@ MophunOS::MophunOS()
 	syscalls["vCheckDataCert"] = std::bind(&MophunOS::vCheckDataCert, this);
 	syscalls["vCheckIMEI"] = std::bind(&MophunOS::vCheckIMEI, this);
 	syscalls["vClearScreen"] = std::bind(&MophunOS::vClearScreen, this);
+	syscalls["vCopyRect"] = std::bind(&MophunOS::vCopyRect, this);
 	syscalls["vDecompress"] = std::bind(&MophunOS::vDecompress, this);
 	syscalls["vDrawFlatPolygon"] = std::bind(&MophunOS::vDrawFlatPolygon, this);
 	syscalls["vDrawLine"] = std::bind(&MophunOS::vDrawLine, this);

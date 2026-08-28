@@ -8,6 +8,20 @@
 
 namespace {
 
+uint16_t readGraphicsU16(const uint8_t* source)
+{
+	return static_cast<uint16_t>(source[0]) |
+		(static_cast<uint16_t>(source[1]) << 8);
+}
+
+uint32_t readGraphicsU32(const uint8_t* source)
+{
+	return static_cast<uint32_t>(source[0]) |
+		(static_cast<uint32_t>(source[1]) << 8) |
+		(static_cast<uint32_t>(source[2]) << 16) |
+		(static_cast<uint32_t>(source[3]) << 24);
+}
+
 void rgb555(uint16_t color, uint8_t& red, uint8_t& green, uint8_t& blue)
 {
 	red = static_cast<uint8_t>(((color >> 10) & 0x1f) * 255 / 31);
@@ -218,6 +232,65 @@ void MophunOS::vFillRect()
 	SDL_Rect rectangle = {x0, y0, x1 - x0 + 1, y1 - y0 + 1};
 	setForeground(video->app.renderer, osdata);
 	SDL_RenderFillRect(video->app.renderer, &rectangle);
+}
+
+void MophunOS::vCopyRect()
+{
+	// VMGPSTRIDEPTR uses a null pointer to identify the screen. Implement the
+	// screen-to-screen path used for native scrolling/shake through a temporary
+	// pixel copy, which also gives overlapping copies deterministic results.
+	constexpr uint32_t DescriptorSize = 10;
+	constexpr int ScreenBytesPerPixel = 2; // T610 RGB555 display
+	const uint32_t destinationAddress = mophunVM->readReg(p0);
+	const uint32_t sourceAddress = mophunVM->readReg(p1);
+	if (destinationAddress > RAM_SIZE - DescriptorSize ||
+		sourceAddress > RAM_SIZE - DescriptorSize)
+		return;
+	const uint8_t* const destination = mophunVM->getRamAddress(destinationAddress);
+	const uint8_t* const source = mophunVM->getRamAddress(sourceAddress);
+	if (readGraphicsU32(destination) != 0 || readGraphicsU32(source) != 0)
+		return; // System-memory pixel copies are not needed by this runtime yet.
+	const uint16_t destinationXBytes = readGraphicsU16(destination + 4);
+	const uint16_t sourceXBytes = readGraphicsU16(source + 4);
+	if ((destinationXBytes % ScreenBytesPerPixel) != 0 ||
+		(sourceXBytes % ScreenBytesPerPixel) != 0)
+		return;
+	int destinationX = destinationXBytes / ScreenBytesPerPixel;
+	int destinationY = readGraphicsU16(destination + 6);
+	int sourceX = sourceXBytes / ScreenBytesPerPixel;
+	int sourceY = readGraphicsU16(source + 6);
+	int width = static_cast<uint16_t>(mophunVM->readReg(p2));
+	int height = static_cast<uint16_t>(mophunVM->readReg(p3));
+	width = std::min(width, std::min(SCREEN_WIDTH - sourceX, SCREEN_WIDTH - destinationX));
+	height = std::min(height, std::min(SCREEN_HEIGHT - sourceY, SCREEN_HEIGHT - destinationY));
+	if (sourceX < 0 || sourceY < 0 || destinationX < 0 || destinationY < 0 ||
+		width <= 0 || height <= 0)
+		return;
+
+	SDL_Surface* copySurface = SDL_CreateRGBSurfaceWithFormat(0, SCREEN_WIDTH,
+		SCREEN_HEIGHT, 32, SDL_PIXELFORMAT_RGBA32);
+	if (copySurface == nullptr || SDL_RenderReadPixels(video->app.renderer, nullptr,
+		SDL_PIXELFORMAT_RGBA32, copySurface->pixels, copySurface->pitch) != 0)
+	{
+		SDL_FreeSurface(copySurface);
+		return;
+	}
+	SDL_Texture* const copyTexture = SDL_CreateTextureFromSurface(video->app.renderer,
+		copySurface);
+	SDL_FreeSurface(copySurface);
+	if (copyTexture == nullptr)
+		return;
+	SDL_SetTextureBlendMode(copyTexture, SDL_BLENDMODE_NONE);
+	SDL_Rect savedClip{};
+	const SDL_bool clipEnabled = SDL_RenderIsClipEnabled(video->app.renderer);
+	if (clipEnabled)
+		SDL_RenderGetClipRect(video->app.renderer, &savedClip);
+	SDL_RenderSetClipRect(video->app.renderer, nullptr);
+	const SDL_Rect sourceRectangle = {sourceX, sourceY, width, height};
+	const SDL_Rect destinationRectangle = {destinationX, destinationY, width, height};
+	SDL_RenderCopy(video->app.renderer, copyTexture, &sourceRectangle, &destinationRectangle);
+	SDL_RenderSetClipRect(video->app.renderer, clipEnabled ? &savedClip : nullptr);
+	SDL_DestroyTexture(copyTexture);
 }
 
 void MophunOS::vDrawLine()

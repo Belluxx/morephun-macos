@@ -43,6 +43,7 @@ class MophunOS {
 
 		// Graphics api
 		void vClearScreen();
+		void vCopyRect();
 		void vDrawFlatPolygon();
 		void vDrawLine();
 		void vDrawObject();

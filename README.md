@@ -112,12 +112,15 @@ build/dev/MoRePhun '/path/to/VRally2_Turbo_[RC14EU]_M5.mpn'
 
 Drive fast and clean to fill the cyan-framed meter. A full white meter is
 ready; press Space to play the native activation sequence, then the yellow
-meter counts down the active boost. The patcher depth-sorts the 3D geometry into
+meter counts down the active boost. During boost, layered exhaust flames flicker
+behind the car while the gameplay framebuffer alternates a one-pixel diagonal
+shake. The patcher depth-sorts the 3D geometry into
 290 guest drawing frames at 15 FPS and embeds them with the transcoded recording.
 At runtime PIP2 code draws the triangles with `vDrawFlatPolygon` and plays the
 PCM WAVE through Mophun's `vSoundGetHandle`/`vSoundCtrlEx` API. MIDI cannot carry
 an MP3 recording, so PCM preserves the actual music while remaining a native
-cartridge asset.
+cartridge asset. The shake uses Mophun's standard `vCopyRect` screen-copy API;
+neither effect relies on a turbo-specific host hook.
 
 ## Credits
 

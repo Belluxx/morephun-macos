@@ -149,7 +149,9 @@ Drive fast and clean to fill the cyan-framed meter at the bottom-right of the ra
 HUD. When its fill turns white, press **Space** to start the 19.28-second activation
 sequence. The race car update is paused during the cinematic; gameplay and an
 eight-second boost resume together at the musical handoff. The yellow meter shows
-the remaining boost.
+the remaining boost. Two layered exhaust flames alternate behind the car during
+boost, while a one-pixel diagonal shake is applied through the standard Mophun
+`vCopyRect` screen-copy call.
 
 The low-poly 3D cinematic covers the car and cockpit, the pilot turning and
 smirking, and the hand opening the safety cover and pressing the button. The

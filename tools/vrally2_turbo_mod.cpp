@@ -29,7 +29,7 @@ constexpr uint32_t ExpectedStringSize = 0x25b;
 constexpr uint32_t CarUpdatePoolId = 185;
 constexpr uint32_t FlipScreenPoolId = 9;
 constexpr uint32_t CarUpdateCodeOffset = 0x3dc4;
-constexpr uint32_t TurboStateSize = 52;
+constexpr uint32_t TurboStateSize = 76;
 constexpr uint32_t CinematicFrameRate = 15;
 constexpr uint32_t CinematicDurationMs = 19280;
 constexpr uint32_t CinematicFrameCount =
@@ -46,6 +46,8 @@ constexpr uint32_t StateCinematicStartTick = 28;
 constexpr uint32_t StateLastUpdateResult = 32;
 constexpr uint32_t StateSoundHandle = 36;
 constexpr uint32_t StatePolygon = 40;
+constexpr uint32_t StateCopyDestination = 52;
+constexpr uint32_t StateCopySource = 64;
 
 constexpr uint32_t CarStarted = 0;
 constexpr uint32_t CarTargetSpeed = 0x24;
@@ -515,8 +517,20 @@ void requireTargetHeader(const VMGPHeader& header)
 std::vector<uint8_t> buildGuestCode(uint32_t originalUpdatePoolId,
 	uint32_t originalFlipPoolId, uint32_t turboStatePoolId, uint32_t turboWavePoolId,
 	uint32_t cinematicPoolId, uint32_t soundInitPoolId, uint32_t soundGetHandlePoolId,
-	uint32_t soundCtrlExPoolId, uint32_t soundCtrlPoolId, Assembler& assembler)
+	uint32_t soundCtrlExPoolId, uint32_t soundCtrlPoolId, uint32_t copyRectPoolId,
+	Assembler& assembler)
 {
+	auto drawTriangle = [&](int x0, int y0, int x1, int y1, int x2, int y2) {
+		const int coordinates[6] = {x0, y0, x1, y1, x2, y2};
+		for (uint32_t coordinate = 0; coordinate < 6; ++coordinate)
+		{
+			assembler.ldq(r0, static_cast<int16_t>(coordinates[coordinate]));
+			assembler.immediate(STHd, r0, s0, StatePolygon + coordinate * 2);
+		}
+		assembler.immediate(ADDi, p0, s0, StatePolygon);
+		assembler.callPool(5); // vDrawFlatPolygon
+	};
+
 	// All gameplay state is guest BSS. During the modal cinematic every invocation of
 	// the original car update is skipped, freezing race physics until the native handoff.
 	assembler.label("TurboCarUpdateWrapper");
@@ -764,7 +778,11 @@ std::vector<uint8_t> buildGuestCode(uint32_t originalUpdatePoolId,
 	assembler.op(STORE, ra, s5);
 	assembler.pool(LDI, s0, zero, turboStatePoolId);
 	assembler.immediate(LDWd, r0, s0, StateInRace);
-	assembler.branchImmediate(BEQI, r0, 0, "HudReturn");
+	assembler.branchImmediate(BEQI, r0, 0, "HudReturnJump");
+	assembler.jump("HudBegin");
+	assembler.label("HudReturnJump");
+	assembler.jump("HudReturn");
+	assembler.label("HudBegin");
 
 	assembler.ldq(p0, 0);
 	assembler.ldq(p1, 0);
@@ -772,6 +790,93 @@ std::vector<uint8_t> buildGuestCode(uint32_t originalUpdatePoolId,
 	assembler.ldq(p3, 159);
 	assembler.callPool(23); // vSetClipWindow
 
+	// The active effect pass is entirely guest-driven. vCopyRect is the standard
+	// Mophun screen-copy API: alternating source/destination offsets produce the
+	// original one-pixel shudder before the exhaust geometry is drawn.
+	assembler.immediate(LDWd, s1, s0, StatePhase);
+	assembler.branchImmediate(BEQI, s1, 2, "HudBoostEffects");
+	assembler.jump("HudMeter");
+	assembler.label("HudBoostEffects");
+	assembler.ldq(r0, 0);
+	assembler.immediate(STWd, r0, s0, StateCopyDestination);
+	assembler.immediate(STWd, r0, s0, StateCopySource);
+	assembler.ldq(r0, 256); // RGB555 scan-line stride in bytes
+	assembler.immediate(STHd, r0, s0, StateCopyDestination + 8);
+	assembler.immediate(STHd, r0, s0, StateCopySource + 8);
+	assembler.immediate(LDWd, s1, s0, StateActiveFrames);
+	assembler.immediate(ANDi, r0, s1, 1);
+	assembler.branchImmediate(BEQI, r0, 0, "ShakeXEven");
+	assembler.ldq(r0, 2); // one RGB555 pixel
+	assembler.immediate(STHd, r0, s0, StateCopyDestination + 4);
+	assembler.ldq(r0, 0);
+	assembler.immediate(STHd, r0, s0, StateCopySource + 4);
+	assembler.jump("ShakeXDone");
+	assembler.label("ShakeXEven");
+	assembler.ldq(r0, 0);
+	assembler.immediate(STHd, r0, s0, StateCopyDestination + 4);
+	assembler.ldq(r0, 2);
+	assembler.immediate(STHd, r0, s0, StateCopySource + 4);
+	assembler.label("ShakeXDone");
+	assembler.immediate(ANDi, r0, s1, 2);
+	assembler.branchImmediate(BEQI, r0, 0, "ShakeYEven");
+	assembler.ldq(r0, 1);
+	assembler.immediate(STHd, r0, s0, StateCopyDestination + 6);
+	assembler.ldq(r0, 0);
+	assembler.immediate(STHd, r0, s0, StateCopySource + 6);
+	assembler.jump("ShakeYDone");
+	assembler.label("ShakeYEven");
+	assembler.ldq(r0, 0);
+	assembler.immediate(STHd, r0, s0, StateCopyDestination + 6);
+	assembler.ldq(r0, 1);
+	assembler.immediate(STHd, r0, s0, StateCopySource + 6);
+	assembler.label("ShakeYDone");
+	assembler.immediate(ADDi, p0, s0, StateCopyDestination);
+	assembler.immediate(ADDi, p1, s0, StateCopySource);
+	assembler.ldq(p2, 127);
+	assembler.ldq(p3, 159);
+	assembler.callPool(copyRectPoolId); // vCopyRect(screen -> screen)
+
+	// Two alternating, layered exhaust flames. They begin at the player's rear
+	// bumper and flare down-screen, matching the old host effect at phone scale.
+	assembler.immediate(ANDi, r0, s1, 1);
+	assembler.branchImmediate(BEQI, r0, 0, "BoostFlameEvenJump");
+	assembler.jump("BoostFlameOdd");
+	assembler.label("BoostFlameEvenJump");
+	assembler.jump("BoostFlameEven");
+	assembler.label("BoostFlameOdd");
+	assembler.ldq(p0, rgb555(220, 40, 20));
+	assembler.call("TurboSetColor");
+	drawTriangle(54, 147, 62, 147, 60, 159);
+	drawTriangle(55, 148, 59, 148, 52, 156);
+	drawTriangle(66, 147, 74, 147, 69, 157);
+	drawTriangle(69, 148, 73, 148, 77, 159);
+	assembler.ldq(p0, rgb555(255, 140, 20));
+	assembler.call("TurboSetColor");
+	drawTriangle(55, 147, 61, 147, 56, 158);
+	drawTriangle(67, 147, 73, 147, 72, 156);
+	assembler.ldq(p0, rgb555(255, 240, 130));
+	assembler.call("TurboSetColor");
+	drawTriangle(57, 147, 59, 147, 58, 154);
+	drawTriangle(69, 147, 71, 147, 70, 153);
+	assembler.jump("BoostFlameDone");
+	assembler.label("BoostFlameEven");
+	assembler.ldq(p0, rgb555(220, 40, 20));
+	assembler.call("TurboSetColor");
+	drawTriangle(54, 147, 62, 147, 56, 157);
+	drawTriangle(57, 148, 61, 148, 64, 159);
+	drawTriangle(66, 147, 74, 147, 72, 159);
+	drawTriangle(67, 148, 71, 148, 64, 156);
+	assembler.ldq(p0, rgb555(255, 140, 20));
+	assembler.call("TurboSetColor");
+	drawTriangle(55, 147, 61, 147, 60, 156);
+	drawTriangle(67, 147, 73, 147, 68, 158);
+	assembler.ldq(p0, rgb555(255, 240, 130));
+	assembler.call("TurboSetColor");
+	drawTriangle(57, 147, 59, 147, 59, 153);
+	drawTriangle(69, 147, 71, 147, 69, 155);
+	assembler.label("BoostFlameDone");
+
+	assembler.label("HudMeter");
 	assembler.ldq(p0, 0x03ff); // cyan RGB555
 	assembler.call("TurboSetColor");
 	assembler.ldq(p0, 94);
@@ -866,6 +971,7 @@ std::vector<uint8_t> buildModdedMpn(std::vector<uint8_t> input,
 	const uint32_t soundGetHandlePoolId = header.poolSize + 7;
 	const uint32_t soundCtrlExPoolId = header.poolSize + 8;
 	const uint32_t soundCtrlPoolId = header.poolSize + 9;
+	const uint32_t copyRectPoolId = header.poolSize + 10;
 	const std::vector<uint8_t> cinematic = buildTurboCinematic();
 	std::vector<uint8_t> nativeData;
 	const uint32_t turboWaveOffset = header.dataSize;
@@ -881,7 +987,7 @@ std::vector<uint8_t> buildModdedMpn(std::vector<uint8_t> input,
 	const std::vector<uint8_t> guestCode = buildGuestCode(originalUpdatePoolId,
 		originalFlipPoolId, turboStatePoolId, turboWavePoolId, cinematicPoolId,
 		soundInitPoolId, soundGetHandlePoolId, soundCtrlExPoolId, soundCtrlPoolId,
-		assembler);
+		copyRectPoolId, assembler);
 
 	std::vector<uint8_t> nativeStrings;
 	auto appendSyscallName = [&](const char* name) {
@@ -893,6 +999,7 @@ std::vector<uint8_t> buildModdedMpn(std::vector<uint8_t> input,
 	const uint32_t soundGetHandleString = appendSyscallName("vSoundGetHandle");
 	const uint32_t soundCtrlExString = appendSyscallName("vSoundCtrlEx");
 	const uint32_t soundCtrlString = appendSyscallName("vSoundCtrl");
+	const uint32_t copyRectString = appendSyscallName("vCopyRect");
 
 	std::vector<uint8_t> newPool(oldPool, oldPool + header.poolSize * PoolItemSize);
 	writeLittleU32(newPool.data() + (CarUpdatePoolId - 1) * PoolItemSize, 0x11);
@@ -910,10 +1017,11 @@ std::vector<uint8_t> buildModdedMpn(std::vector<uint8_t> input,
 	appendPoolItem(newPool, 0x02, soundGetHandleString, 0);
 	appendPoolItem(newPool, 0x02, soundCtrlExString, 0);
 	appendPoolItem(newPool, 0x02, soundCtrlString, 0);
+	appendPoolItem(newPool, 0x02, copyRectString, 0);
 
 	std::vector<uint8_t> output;
 	output.reserve(input.size() + guestCode.size() + nativeData.size() +
-		9 * PoolItemSize + nativeStrings.size());
+		10 * PoolItemSize + nativeStrings.size());
 	output.insert(output.end(), input.begin(), input.begin() + sizeof(VMGPHeader));
 	output.insert(output.end(), input.begin() + sizeof(VMGPHeader), input.begin() + oldDataOffset);
 	output.insert(output.end(), guestCode.begin(), guestCode.end());
@@ -928,7 +1036,7 @@ std::vector<uint8_t> buildModdedMpn(std::vector<uint8_t> input,
 	writeLittleU32(output.data() + 12, header.codeSize + static_cast<uint32_t>(guestCode.size()));
 	writeLittleU32(output.data() + 16, header.dataSize + static_cast<uint32_t>(nativeData.size()));
 	writeLittleU32(output.data() + 20, header.bssSize + TurboStateSize);
-	writeLittleU32(output.data() + 32, header.poolSize + 9);
+	writeLittleU32(output.data() + 32, header.poolSize + 10);
 	writeLittleU32(output.data() + 36,
 		header.stringSize + static_cast<uint32_t>(nativeStrings.size()));
 	std::cout << "Embedded native cinematic: " << CinematicFrameCount << " frames at "
