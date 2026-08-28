@@ -28,7 +28,7 @@ constexpr uint32_t ExpectedStringSize = 0x25b;
 constexpr uint32_t CarUpdatePoolId = 185;
 constexpr uint32_t FlipScreenPoolId = 9;
 constexpr uint32_t CarUpdateCodeOffset = 0x3dc4;
-constexpr uint32_t TurboStateSize = 76;
+constexpr uint32_t TurboStateSize = 80;
 constexpr uint32_t CinematicFrameRate = 15;
 constexpr uint32_t CinematicDurationMs = 19280;
 constexpr uint32_t BoostFrameCount = 120;
@@ -52,10 +52,12 @@ constexpr uint32_t StateSoundHandle = 36;
 constexpr uint32_t StatePolygon = 40;
 constexpr uint32_t StateCopyDestination = 52;
 constexpr uint32_t StateCopySource = 64;
+constexpr uint32_t StateCar = 76;
 
 constexpr uint32_t CarStarted = 0;
 constexpr uint32_t CarTargetSpeed = 0x24;
 constexpr uint32_t CarSpeed = 0x28;
+constexpr uint32_t CarJumpHeight = 0xac;
 
 constexpr uint32_t KeyDown = 0x02;
 constexpr uint32_t KeyFire2 = 0x100;
@@ -564,6 +566,8 @@ std::vector<uint8_t> buildGuestCode(uint32_t originalUpdatePoolId,
 		for (uint32_t coordinate = 0; coordinate < 6; ++coordinate)
 		{
 			assembler.ldq(r0, static_cast<int16_t>(coordinates[coordinate]));
+			if ((coordinate & 1U) != 0)
+				assembler.op(SUB, r0, r0, s2);
 			assembler.immediate(STHd, r0, s0, StatePolygon + coordinate * 2);
 		}
 		assembler.immediate(ADDi, p0, s0, StatePolygon);
@@ -594,6 +598,7 @@ std::vector<uint8_t> buildGuestCode(uint32_t originalUpdatePoolId,
 	assembler.op(STORE, ra, s6);
 	assembler.op(MOV, s1, p0);                         // s1 = car
 	assembler.pool(LDI, s0, zero, turboStatePoolId);  // s0 = TurboState
+	assembler.immediate(STWd, s1, s0, StateCar);
 	assembler.immediate(LDBUd, r0, s1, CarStarted);
 	assembler.ldq(p0, 1);
 	assembler.branch(BNE, r0, p0, "TurboReset");
@@ -881,8 +886,10 @@ std::vector<uint8_t> buildGuestCode(uint32_t originalUpdatePoolId,
 	assembler.ldq(p3, 159);
 	assembler.callPool(copyRectPoolId); // vCopyRect(screen -> screen)
 
-	// Two alternating, layered exhaust flames. They begin at the player's rear
-	// bumper and flare down-screen, matching the old host effect at phone scale.
+	// Two alternating, layered exhaust flames. V-Rally renders the player car at
+	// y=147-CarJumpHeight, so apply the same displacement to every flame vertex.
+	assembler.immediate(LDWd, r0, s0, StateCar);
+	assembler.immediate(LDHUd, s2, r0, CarJumpHeight);
 	assembler.immediate(ANDi, r0, s1, 1);
 	assembler.branchImmediate(BEQI, r0, 0, "BoostFlameEvenJump");
 	assembler.jump("BoostFlameOdd");
