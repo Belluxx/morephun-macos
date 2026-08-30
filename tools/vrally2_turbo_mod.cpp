@@ -1,23 +1,24 @@
 #include "binary_io.h"
+#include "mophunmod/mpn_image.h"
+#include "mophunmod/patch_builder.h"
+#include "mophunmod/pip_assembler.h"
 #include "turbo/cinematic.h"
-#include "opcodes.h"
-#include "pool.h"
-#include "registers.h"
 #include "rom_decrypt.h"
 #include "vmgp_header.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <cstring>
 #include <fstream>
 #include <iostream>
-#include <map>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 namespace {
+
+using namespace mophunmod;
+using Assembler = PipAssembler;
 
 constexpr uint32_t ExpectedCodeSize = 0x82f0;
 constexpr uint32_t ExpectedDataSize = 0x0a44;
@@ -62,145 +63,11 @@ constexpr uint32_t CarJumpHeight = 0xac;
 constexpr uint32_t KeyDown = 0x02;
 constexpr uint32_t KeyFire2 = 0x100;
 
-uint32_t encodeImmediate(int32_t value)
-{
-	return static_cast<uint32_t>(value) | 0x80000000U;
-}
-
-void appendU32(std::vector<uint8_t>& bytes, uint32_t value)
-{
-	bytes.push_back(static_cast<uint8_t>(value));
-	bytes.push_back(static_cast<uint8_t>(value >> 8));
-	bytes.push_back(static_cast<uint8_t>(value >> 16));
-	bytes.push_back(static_cast<uint8_t>(value >> 24));
-}
-
 void appendU16(std::vector<uint8_t>& bytes, uint16_t value)
 {
 	bytes.push_back(static_cast<uint8_t>(value));
 	bytes.push_back(static_cast<uint8_t>(value >> 8));
 }
-
-void appendPoolItem(std::vector<uint8_t>& bytes, uint8_t type, uint32_t argument1,
-	uint32_t argument2)
-{
-	appendU32(bytes, static_cast<uint32_t>(type) | (argument1 << 8));
-	appendU32(bytes, argument2);
-}
-
-class Assembler {
-	public:
-		explicit Assembler(uint32_t baseOffset) : baseOffset(baseOffset) {}
-
-		void label(const std::string& name)
-		{
-			if (!labels.emplace(name, static_cast<uint32_t>(code.size())).second)
-				throw std::runtime_error("Duplicate assembly label: " + name);
-		}
-
-		uint32_t labelOffset(const std::string& name) const
-		{
-			auto found = labels.find(name);
-			if (found == labels.end())
-				throw std::runtime_error("Unknown assembly label: " + name);
-			return baseOffset + found->second;
-		}
-
-		void op(uint8_t opcode, uint8_t destination = zero, uint8_t source = zero,
-			uint8_t extra = zero)
-		{
-			code.push_back(opcode);
-			code.push_back(destination);
-			code.push_back(source);
-			code.push_back(extra);
-		}
-
-		void ldq(uint8_t destination, int16_t value)
-		{
-			op(LDQ, destination, static_cast<uint8_t>(value), static_cast<uint8_t>(value >> 8));
-		}
-
-		void immediate(uint8_t opcode, uint8_t destination, uint8_t source, int32_t value)
-		{
-			op(opcode, destination, source);
-			appendU32(code, encodeImmediate(value));
-		}
-
-		void pool(uint8_t opcode, uint8_t destination, uint8_t source, uint32_t id)
-		{
-			op(opcode, destination, source);
-			appendU32(code, id);
-		}
-
-		void callPool(uint32_t id) { pool(CALLl, zero, zero, id); }
-
-		void call(const std::string& target)
-		{
-			const uint32_t instruction = static_cast<uint32_t>(code.size());
-			op(CALLl);
-			appendU32(code, 0);
-			fixups.push_back({FixupKind::Long, instruction, instruction + 4, target});
-		}
-
-		void jump(const std::string& target)
-		{
-			const uint32_t instruction = static_cast<uint32_t>(code.size());
-			op(JPl);
-			appendU32(code, 0);
-			fixups.push_back({FixupKind::Long, instruction, instruction + 4, target});
-		}
-
-		void branch(uint8_t opcode, uint8_t left, uint8_t right, const std::string& target)
-		{
-			const uint32_t instruction = static_cast<uint32_t>(code.size());
-			op(opcode, left, right);
-			appendU32(code, 0);
-			fixups.push_back({FixupKind::Long, instruction, instruction + 4, target});
-		}
-
-		void branchImmediate(uint8_t opcode, uint8_t value, int8_t comparison,
-			const std::string& target)
-		{
-			const uint32_t instruction = static_cast<uint32_t>(code.size());
-			op(opcode, value, static_cast<uint8_t>(comparison), 0);
-			fixups.push_back({FixupKind::Short, instruction, instruction + 3, target});
-		}
-
-		std::vector<uint8_t> finish()
-		{
-			for (const Fixup& fixup : fixups)
-			{
-				auto found = labels.find(fixup.target);
-				if (found == labels.end())
-					throw std::runtime_error("Undefined assembly label: " + fixup.target);
-				const int32_t displacement = static_cast<int32_t>(found->second) -
-					static_cast<int32_t>(fixup.instruction);
-				if (fixup.kind == FixupKind::Short)
-				{
-					if (displacement % 4 != 0 || displacement / 4 < -128 || displacement / 4 > 127)
-						throw std::runtime_error("Short branch is out of range: " + fixup.target);
-					code[fixup.patchOffset] = static_cast<uint8_t>(displacement / 4);
-				}
-				else
-					writeLittleU32(code.data() + fixup.patchOffset, encodeImmediate(displacement));
-			}
-			return code;
-		}
-
-	private:
-		enum class FixupKind { Short, Long };
-		struct Fixup {
-			FixupKind kind;
-			uint32_t instruction;
-			uint32_t patchOffset;
-			std::string target;
-		};
-
-		uint32_t baseOffset;
-		std::vector<uint8_t> code;
-		std::map<std::string, uint32_t> labels;
-		std::vector<Fixup> fixups;
-};
 
 std::vector<uint8_t> readFile(const std::string& path)
 {
@@ -546,16 +413,16 @@ void applyTurboMusicFade(std::vector<uint8_t>& wave)
 	}
 }
 
-void requireTargetHeader(const VMGPHeader& header)
+void requireTargetHeader(const MpnHeader& header)
 {
-	if (std::string(header.magicNo, 4) != "VMGP" || header.flags != 0 ||
+	if (std::string(header.magic.data(), 4) != "VMGP" || header.flags != 0 ||
 		header.codeSize != ExpectedCodeSize || header.dataSize != ExpectedDataSize ||
-		header.bssSize != ExpectedBssSize || header.resSize != ExpectedResourceSize ||
+		header.bssSize != ExpectedBssSize || header.resourceSize != ExpectedResourceSize ||
 		header.poolSize != ExpectedPoolSize || header.stringSize != ExpectedStringSize)
 		throw std::runtime_error("Input is not the supported V-Rally 2 RC14EU M5 executable");
 }
 
-std::vector<uint8_t> buildGuestCode(uint32_t originalUpdatePoolId,
+PipProgram buildGuestCode(uint32_t originalUpdatePoolId,
 	uint32_t originalFlipPoolId, uint32_t turboStatePoolId, uint32_t turboWavePoolId,
 	uint32_t cinematicPoolId, uint32_t soundInitPoolId, uint32_t soundGetHandlePoolId,
 	uint32_t soundCtrlExPoolId, uint32_t soundCtrlPoolId, uint32_t copyRectPoolId,
@@ -991,108 +858,59 @@ std::vector<uint8_t> buildModdedMpn(std::vector<uint8_t> input,
 	const double waveDuration = validateTurboWave(turboWave);
 	std::vector<uint8_t> fadedTurboWave = turboWave;
 	applyTurboMusicFade(fadedTurboWave);
-	const VMGPHeader header = decodeVMGPHeader(input.data());
+	const MpnImage sourceImage = MpnImage::parse(input);
+	const MpnHeader header = sourceImage.header();
 	requireTargetHeader(header);
+	const VMGPHeader encryptedHeader = decodeVMGPHeader(input.data());
 	std::string decryptError;
-	if (!decryptCommercialCode(input, header, decryptError))
+	if (!decryptCommercialCode(input, encryptedHeader, decryptError))
 		throw std::runtime_error("Unable to decrypt the commercial code: " + decryptError);
-
-	const uint32_t oldDataOffset = sizeof(VMGPHeader) + header.codeSize;
-	const uint32_t oldResourceOffset = oldDataOffset + header.dataSize;
-	const uint32_t oldPoolOffset = oldResourceOffset + header.resSize;
-	const uint32_t oldStringOffset = oldPoolOffset + header.poolSize * PoolItemSize;
-	if (oldStringOffset + header.stringSize > input.size())
-		throw std::runtime_error("Input MPN sections exceed the file size");
+	PatchBuilder patch(MpnImage::parse(input));
 
 	const uint8_t expectedUpdateStart[] = {STORE, ra, s2, 0};
 	if (!std::equal(expectedUpdateStart, expectedUpdateStart + sizeof(expectedUpdateStart),
 		input.begin() + sizeof(VMGPHeader) + CarUpdateCodeOffset))
 		throw std::runtime_error("Car update signature does not match the supported executable");
 
-	uint8_t* const oldPool = input.data() + oldPoolOffset;
-	const PoolItem flipItem = decodePoolItemBytes(oldPool + (FlipScreenPoolId - 1) * PoolItemSize);
-	const PoolItem updateItem = decodePoolItemBytes(oldPool + (CarUpdatePoolId - 1) * PoolItemSize);
-	if (flipItem.segment_0 != 0 || flipItem.segment_1 != 2 ||
-		updateItem.segment_0 != 1 || updateItem.extra != CarUpdateCodeOffset)
+	const PoolEntry flipItem = patch.poolEntry(FlipScreenPoolId);
+	const PoolEntry updateItem = patch.poolEntry(CarUpdatePoolId);
+	if (flipItem.type != 0x02 || (updateItem.type >> 4) != 1 ||
+		updateItem.value != CarUpdateCodeOffset)
 		throw std::runtime_error("V-Rally hook address table entries do not match");
 
-	const uint32_t originalUpdatePoolId = header.poolSize + 1;
-	const uint32_t originalFlipPoolId = header.poolSize + 2;
-	const uint32_t turboStatePoolId = header.poolSize + 3;
-	const uint32_t turboWavePoolId = header.poolSize + 4;
-	const uint32_t cinematicPoolId = header.poolSize + 5;
-	const uint32_t soundInitPoolId = header.poolSize + 6;
-	const uint32_t soundGetHandlePoolId = header.poolSize + 7;
-	const uint32_t soundCtrlExPoolId = header.poolSize + 8;
-	const uint32_t soundCtrlPoolId = header.poolSize + 9;
-	const uint32_t copyRectPoolId = header.poolSize + 10;
-	const std::vector<uint8_t> cinematic = buildTurboCinematic();
-	std::vector<uint8_t> nativeData;
-	const uint32_t turboWaveOffset = header.dataSize;
-	nativeData.insert(nativeData.end(), fadedTurboWave.begin(), fadedTurboWave.end());
-	while (nativeData.size() % sizeof(uint32_t) != 0)
-		nativeData.push_back(0);
-	const uint32_t cinematicOffset = header.dataSize + static_cast<uint32_t>(nativeData.size());
-	nativeData.insert(nativeData.end(), cinematic.begin(), cinematic.end());
-	while (nativeData.size() % sizeof(uint32_t) != 0)
-		nativeData.push_back(0);
+	// Hook reservations preserve callable originals immediately, while binding the
+	// wrapper address is deferred until the assembled program has been allocated.
+	const CodeHook updateHook = patch.reserveCodeHook(CarUpdatePoolId);
+	const CodeHook flipHook = patch.reserveCodeHook(FlipScreenPoolId);
+	const SectionAllocation turboState = patch.allocateBss(TurboStateSize, 4);
+	const PoolId turboStatePoolId = patch.addReference(turboState);
 
-	Assembler assembler(header.codeSize);
-	const std::vector<uint8_t> guestCode = buildGuestCode(originalUpdatePoolId,
-		originalFlipPoolId, turboStatePoolId, turboWavePoolId, cinematicPoolId,
+	const SectionAllocation turboWaveData = patch.allocateData(fadedTurboWave);
+	patch.alignData(4);
+	const PoolId turboWavePoolId = patch.addReference(turboWaveData);
+	const std::vector<uint8_t> cinematic = buildTurboCinematic();
+	const SectionAllocation cinematicData = patch.allocateData(cinematic);
+	patch.alignData(4);
+	const PoolId cinematicPoolId = patch.addReference(cinematicData);
+
+	const PoolId soundInitPoolId = patch.importSyscall("vSoundInit");
+	const PoolId soundGetHandlePoolId = patch.importSyscall("vSoundGetHandle");
+	const PoolId soundCtrlExPoolId = patch.importSyscall("vSoundCtrlEx");
+	const PoolId soundCtrlPoolId = patch.importSyscall("vSoundCtrl");
+	const PoolId copyRectPoolId = patch.importSyscall("vCopyRect");
+
+	Assembler assembler(patch.nextCodeOffset(4));
+	const PipProgram guestProgram = buildGuestCode(updateHook.originalPoolId(),
+		flipHook.originalPoolId(), turboStatePoolId, turboWavePoolId, cinematicPoolId,
 		soundInitPoolId, soundGetHandlePoolId, soundCtrlExPoolId, soundCtrlPoolId,
 		copyRectPoolId, assembler);
+	const SectionAllocation guestCode = patch.allocateCode(guestProgram.bytes(), 4);
+	if (guestCode.offset != header.codeSize)
+		throw std::runtime_error("Unexpected padding before the Turbo guest code");
+	patch.bindCodeHook(updateHook, guestProgram.symbolOffset("TurboCarUpdateWrapper"));
+	patch.bindCodeHook(flipHook, guestProgram.symbolOffset("TurboFlipWrapper"));
 
-	std::vector<uint8_t> nativeStrings;
-	auto appendSyscallName = [&](const char* name) {
-		const uint32_t offset = header.stringSize + static_cast<uint32_t>(nativeStrings.size());
-		nativeStrings.insert(nativeStrings.end(), name, name + std::strlen(name) + 1);
-		return offset;
-	};
-	const uint32_t soundInitString = appendSyscallName("vSoundInit");
-	const uint32_t soundGetHandleString = appendSyscallName("vSoundGetHandle");
-	const uint32_t soundCtrlExString = appendSyscallName("vSoundCtrlEx");
-	const uint32_t soundCtrlString = appendSyscallName("vSoundCtrl");
-	const uint32_t copyRectString = appendSyscallName("vCopyRect");
-
-	std::vector<uint8_t> newPool(oldPool, oldPool + header.poolSize * PoolItemSize);
-	writeLittleU32(newPool.data() + (CarUpdatePoolId - 1) * PoolItemSize, 0x11);
-	writeLittleU32(newPool.data() + (CarUpdatePoolId - 1) * PoolItemSize + 4,
-		assembler.labelOffset("TurboCarUpdateWrapper"));
-	writeLittleU32(newPool.data() + (FlipScreenPoolId - 1) * PoolItemSize, 0x11);
-	writeLittleU32(newPool.data() + (FlipScreenPoolId - 1) * PoolItemSize + 4,
-		assembler.labelOffset("TurboFlipWrapper"));
-	appendPoolItem(newPool, 0x11, 0, CarUpdateCodeOffset);
-	appendPoolItem(newPool, 0x02, flipItem.segmentoffset, 0);
-	appendPoolItem(newPool, 0x41, 0, header.bssSize);
-	appendPoolItem(newPool, 0x21, 0, turboWaveOffset);
-	appendPoolItem(newPool, 0x21, 0, cinematicOffset);
-	appendPoolItem(newPool, 0x02, soundInitString, 0);
-	appendPoolItem(newPool, 0x02, soundGetHandleString, 0);
-	appendPoolItem(newPool, 0x02, soundCtrlExString, 0);
-	appendPoolItem(newPool, 0x02, soundCtrlString, 0);
-	appendPoolItem(newPool, 0x02, copyRectString, 0);
-
-	std::vector<uint8_t> output;
-	output.reserve(input.size() + guestCode.size() + nativeData.size() +
-		10 * PoolItemSize + nativeStrings.size());
-	output.insert(output.end(), input.begin(), input.begin() + sizeof(VMGPHeader));
-	output.insert(output.end(), input.begin() + sizeof(VMGPHeader), input.begin() + oldDataOffset);
-	output.insert(output.end(), guestCode.begin(), guestCode.end());
-	output.insert(output.end(), input.begin() + oldDataOffset, input.begin() + oldResourceOffset);
-	output.insert(output.end(), nativeData.begin(), nativeData.end());
-	output.insert(output.end(), input.begin() + oldResourceOffset, input.begin() + oldPoolOffset);
-	output.insert(output.end(), newPool.begin(), newPool.end());
-	output.insert(output.end(), input.begin() + oldStringOffset,
-		input.begin() + oldStringOffset + header.stringSize);
-	output.insert(output.end(), nativeStrings.begin(), nativeStrings.end());
-
-	writeLittleU32(output.data() + 12, header.codeSize + static_cast<uint32_t>(guestCode.size()));
-	writeLittleU32(output.data() + 16, header.dataSize + static_cast<uint32_t>(nativeData.size()));
-	writeLittleU32(output.data() + 20, header.bssSize + TurboStateSize);
-	writeLittleU32(output.data() + 32, header.poolSize + 10);
-	writeLittleU32(output.data() + 36,
-		header.stringSize + static_cast<uint32_t>(nativeStrings.size()));
+	const std::vector<uint8_t> output = patch.serialize();
 	std::cout << "Embedded native cinematic: " << CinematicFrameCount << " frames at "
 		<< CinematicFrameRate << " FPS (" << cinematic.size() << " bytes), PCM WAVE "
 		<< fadedTurboWave.size() << " bytes / " << waveDuration

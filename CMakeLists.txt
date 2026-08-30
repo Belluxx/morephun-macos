@@ -72,6 +72,17 @@ function(configure_morephun_target TARGET)
 	endif()
 endfunction()
 
+add_library(mophunmod
+	lib/mophunmod/mpn_image.cpp
+	lib/mophunmod/mpn_image.h
+	lib/mophunmod/patch_builder.cpp
+	lib/mophunmod/patch_builder.h
+	lib/mophunmod/pip_assembler.cpp
+	lib/mophunmod/pip_assembler.h
+	lib/mophunmod/pool_table.cpp
+	lib/mophunmod/pool_table.h)
+target_include_directories(mophunmod PUBLIC lib)
+
 # MoRePhun
 file(GLOB_RECURSE MOREPHUN_SOURCES MoRePhun/*.cpp)
 file(GLOB_RECURSE MOREPHUN_HEADERS MoRePhun/*.h)
@@ -197,7 +208,7 @@ add_executable(VRally2TurboMod
 	MoRePhun/turbo/cinematic.cpp
 	MoRePhun/turbo/retro3d.cpp)
 target_include_directories(VRally2TurboMod PRIVATE MoRePhun)
-target_link_libraries(VRally2TurboMod PRIVATE ${MOPHUN_SDL_TARGET})
+target_link_libraries(VRally2TurboMod PRIVATE mophunmod ${MOPHUN_SDL_TARGET})
 
 if(BUILD_TESTING)
 	if(TARGET VRally2Standalone)
@@ -207,6 +218,18 @@ if(BUILD_TESTING)
 	add_executable(BinaryFormatTests tests/binary_format_tests.cpp)
 	target_include_directories(BinaryFormatTests PRIVATE MoRePhun)
 	add_test(NAME BinaryFormatTests COMMAND BinaryFormatTests)
+
+	add_executable(ModdingMpnTests tests/modding_mpn_tests.cpp)
+	target_link_libraries(ModdingMpnTests PRIVATE mophunmod)
+	add_test(NAME ModdingMpnTests COMMAND ModdingMpnTests)
+
+	add_executable(ModdingAssemblerTests tests/modding_assembler_tests.cpp)
+	target_link_libraries(ModdingAssemblerTests PRIVATE mophunmod)
+	add_test(NAME ModdingAssemblerTests COMMAND ModdingAssemblerTests)
+
+	add_executable(ModdingPatchTests tests/modding_patch_tests.cpp)
+	target_link_libraries(ModdingPatchTests PRIVATE mophunmod)
+	add_test(NAME ModdingPatchTests COMMAND ModdingPatchTests)
 
 	add_executable(StorageTests
 		tests/storage_tests.cpp
