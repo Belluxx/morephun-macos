@@ -145,6 +145,8 @@ embedded assets unless you have the rights to do so.
 ## Turbo boost (native MPN mod)
 
 `VRally2TurboMod` patches the supported RC14EU M5 executable with PIP2 guest code.
+It uses the built-in `vrally2-rc14eu-m5` target profile: Mophun OS calls are
+discovered by import name, while V-Rally internals are typed and signature-checked.
 Drive fast and clean to fill the cyan-framed meter at the bottom-right of the race
 HUD. When its fill turns white, press **Space** to start the 19.28-second activation
 sequence. The race car update is paused during the cinematic; gameplay and an
@@ -178,12 +180,24 @@ build/dev/VRally2TurboMod \
 The recording is stored directly as PCM WAVE and uses the platform's native
 sound-handle API; there is no MP3 decoder or MIDI conversion step at runtime.
 
+`build/dev/MPNInspect game.mpn` reports the selected target and its resolved
+symbols. Turbo outputs include a lightweight modification marker, allowing both
+the inspector and patcher to identify and safely reject reapplication.
+
 The meter charges fastest near maximum road speed. Braking, reversing, driving off
 the road, sustained low speed, and sudden impacts reduce it. The patcher verifies
 the exact executable header and hook signatures before writing an output, so it
 will reject other releases rather than patching unknown code.
 
 ## Development
+
+Target descriptions use the public `mophunmod::TargetProfile` API in
+`lib/mophunmod/target.h`. Built-in profiles are registered by
+`mophunmod::builtInTargets()`; the V-Rally definition in `target_vrally2.cpp`
+shows fixed fingerprints, import-discovered pool entries, typed offsets and
+constants, and plaintext code signatures. A tool can also construct its own
+`TargetCatalog`, so adding another game does not require changing the patching
+machinery.
 
 Useful format and preservation references:
 

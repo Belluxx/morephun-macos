@@ -1,5 +1,7 @@
 #include "mophunmod/patch_builder.h"
 
+#include "mophunmod/target.h"
+
 #include <algorithm>
 #include <limits>
 #include <utility>
@@ -146,6 +148,11 @@ uint32_t PatchBuilder::internString(const std::string& value)
 	if (findString(value, offset))
 		return offset;
 	return allocateString(value);
+}
+
+void PatchBuilder::markModified(const std::string& targetId, const std::string& modId)
+{
+	internString(makeModificationMarker(targetId, modId));
 }
 
 PoolId PatchBuilder::addPoolEntry(const PoolEntry& entry)

@@ -80,7 +80,10 @@ add_library(mophunmod
 	lib/mophunmod/pip_assembler.cpp
 	lib/mophunmod/pip_assembler.h
 	lib/mophunmod/pool_table.cpp
-	lib/mophunmod/pool_table.h)
+	lib/mophunmod/pool_table.h
+	lib/mophunmod/target.cpp
+	lib/mophunmod/target.h
+	lib/mophunmod/target_vrally2.cpp)
 target_include_directories(mophunmod PUBLIC lib)
 
 # MoRePhun
@@ -196,6 +199,7 @@ if(MOPHUN_BUILD_VRALLY2_STANDALONE)
 endif()
 
 add_executable(MPNInspect tools/mpn_inspect.cpp)
+target_link_libraries(MPNInspect PRIVATE mophunmod)
 
 add_executable(PIPDisasm
 	tools/pip_disasm.cpp
@@ -230,6 +234,10 @@ if(BUILD_TESTING)
 	add_executable(ModdingPatchTests tests/modding_patch_tests.cpp)
 	target_link_libraries(ModdingPatchTests PRIVATE mophunmod)
 	add_test(NAME ModdingPatchTests COMMAND ModdingPatchTests)
+
+	add_executable(ModdingTargetTests tests/modding_target_tests.cpp)
+	target_link_libraries(ModdingTargetTests PRIVATE mophunmod)
+	add_test(NAME ModdingTargetTests COMMAND ModdingTargetTests)
 
 	add_executable(StorageTests
 		tests/storage_tests.cpp

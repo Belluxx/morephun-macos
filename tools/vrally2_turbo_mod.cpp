@@ -2,6 +2,7 @@
 #include "mophunmod/mpn_image.h"
 #include "mophunmod/patch_builder.h"
 #include "mophunmod/pip_assembler.h"
+#include "mophunmod/target.h"
 #include "turbo/cinematic.h"
 #include "rom_decrypt.h"
 #include "vmgp_header.h"
@@ -20,19 +21,9 @@ namespace {
 using namespace mophunmod;
 using Assembler = PipAssembler;
 
-constexpr uint32_t ExpectedCodeSize = 0x82f0;
-constexpr uint32_t ExpectedDataSize = 0x0a44;
-constexpr uint32_t ExpectedBssSize = 0xcdd0;
-constexpr uint32_t ExpectedResourceSize = 0xd1e8;
-constexpr uint32_t ExpectedPoolSize = 0x1d2;
-constexpr uint32_t ExpectedStringSize = 0x25b;
-constexpr uint32_t CarUpdatePoolId = 185;
-constexpr uint32_t FlipScreenPoolId = 9;
-constexpr uint32_t CarUpdateCodeOffset = 0x3dc4;
 constexpr uint32_t TurboStateSize = 80;
 constexpr uint32_t CinematicFrameRate = 15;
 constexpr uint32_t CinematicDurationMs = 19280;
-constexpr uint32_t BoostFrameCount = 120;
 constexpr uint32_t BoostDurationMs = 8000;
 constexpr uint32_t TurboMusicDurationMs = CinematicDurationMs + BoostDurationMs;
 constexpr uint32_t TurboMusicSampleRate = 11025;
@@ -54,11 +45,6 @@ constexpr uint32_t StatePolygon = 40;
 constexpr uint32_t StateCopyDestination = 52;
 constexpr uint32_t StateCopySource = 64;
 constexpr uint32_t StateCar = 76;
-
-constexpr uint32_t CarStarted = 0;
-constexpr uint32_t CarTargetSpeed = 0x24;
-constexpr uint32_t CarSpeed = 0x28;
-constexpr uint32_t CarJumpHeight = 0xac;
 
 constexpr uint32_t KeyDown = 0x02;
 constexpr uint32_t KeyFire2 = 0x100;
@@ -413,21 +399,25 @@ void applyTurboMusicFade(std::vector<uint8_t>& wave)
 	}
 }
 
-void requireTargetHeader(const MpnHeader& header)
-{
-	if (std::string(header.magic.data(), 4) != "VMGP" || header.flags != 0 ||
-		header.codeSize != ExpectedCodeSize || header.dataSize != ExpectedDataSize ||
-		header.bssSize != ExpectedBssSize || header.resourceSize != ExpectedResourceSize ||
-		header.poolSize != ExpectedPoolSize || header.stringSize != ExpectedStringSize)
-		throw std::runtime_error("Input is not the supported V-Rally 2 RC14EU M5 executable");
-}
-
-PipProgram buildGuestCode(uint32_t originalUpdatePoolId,
+PipProgram buildGuestCode(const ResolvedTarget& target, uint32_t originalUpdatePoolId,
 	uint32_t originalFlipPoolId, uint32_t turboStatePoolId, uint32_t turboWavePoolId,
 	uint32_t cinematicPoolId, uint32_t soundInitPoolId, uint32_t soundGetHandlePoolId,
 	uint32_t soundCtrlExPoolId, uint32_t soundCtrlPoolId, uint32_t copyRectPoolId,
 	Assembler& assembler)
 {
+	const PoolId drawFlatPolygonPoolId = target.pool("os.graphics.draw_flat_polygon");
+	const PoolId fillRectPoolId = target.pool("os.graphics.fill_rect");
+	const PoolId getButtonDataPoolId = target.pool("os.input.get_button_data");
+	const PoolId getTickCountPoolId = target.pool("os.time.get_tick_count");
+	const PoolId setClipWindowPoolId = target.pool("os.graphics.set_clip_window");
+	const PoolId setForeColorPoolId = target.pool("os.graphics.set_fore_color");
+	const uint32_t carStarted = target.constant("game.car.started_offset");
+	const uint32_t carTargetSpeed = target.constant("game.car.target_speed_offset");
+	const uint32_t carSpeed = target.constant("game.car.speed_offset");
+	const uint32_t carJumpHeight = target.constant("game.car.jump_height_offset");
+	const uint32_t boostFrameCount =
+		target.constant("game.race_update_hz") * BoostDurationMs / 1000U;
+
 	auto drawTriangle = [&](int x0, int y0, int x1, int y1, int x2, int y2) {
 		const int coordinates[6] = {x0, y0, x1, y1, x2, y2};
 		for (uint32_t coordinate = 0; coordinate < 6; ++coordinate)
@@ -438,7 +428,7 @@ PipProgram buildGuestCode(uint32_t originalUpdatePoolId,
 			assembler.immediate(STHd, r0, s0, StatePolygon + coordinate * 2);
 		}
 		assembler.immediate(ADDi, p0, s0, StatePolygon);
-		assembler.callPool(5); // vDrawFlatPolygon
+		assembler.callPool(drawFlatPolygonPoolId);
 	};
 
 	// All gameplay state is guest BSS. During the modal cinematic every invocation of
@@ -466,12 +456,12 @@ PipProgram buildGuestCode(uint32_t originalUpdatePoolId,
 	assembler.op(MOV, s1, p0);                         // s1 = car
 	assembler.pool(LDI, s0, zero, turboStatePoolId);  // s0 = TurboState
 	assembler.immediate(STWd, s1, s0, StateCar);
-	assembler.immediate(LDBUd, r0, s1, CarStarted);
+	assembler.immediate(LDBUd, r0, s1, carStarted);
 	assembler.ldq(p0, 1);
 	assembler.branch(BNE, r0, p0, "TurboReset");
 	assembler.ldq(r0, 1);
 	assembler.immediate(STWd, r0, s0, StateInRace);
-	assembler.callPool(10); // vGetButtonData
+	assembler.callPool(getButtonDataPoolId);
 	assembler.op(MOV, s2, r0);
 	assembler.immediate(LDWd, s3, s0, StatePhase);
 	assembler.branchImmediate(BEQI, s3, 2, "TurboActive");
@@ -483,8 +473,8 @@ PipProgram buildGuestCode(uint32_t originalUpdatePoolId,
 	assembler.immediate(STWd, s4, s0, StateCollisionCooldown);
 	assembler.label("CooldownDone");
 	assembler.immediate(LDWd, s5, s0, StateCharge);
-	assembler.immediate(LDWd, p0, s1, CarSpeed);
-	assembler.immediate(LDWd, p1, s1, CarTargetSpeed);
+	assembler.immediate(LDWd, p0, s1, carSpeed);
+	assembler.immediate(LDWd, p1, s1, carTargetSpeed);
 	assembler.branchImmediate(BLTI, p0, 0, "RateReverse");
 	assembler.immediate(ANDi, r0, s2, KeyDown);
 	assembler.branchImmediate(BNEI, r0, 0, "RateBrake");
@@ -555,7 +545,7 @@ PipProgram buildGuestCode(uint32_t originalUpdatePoolId,
 	assembler.immediate(STWd, r0, s0, StatePhase);
 	assembler.ldq(r0, 0);
 	assembler.immediate(STWd, r0, s0, StateCharge);
-	assembler.callPool(14); // vGetTickCount: native A/V synchronization clock
+	assembler.callPool(getTickCountPoolId); // native A/V synchronization clock
 	assembler.immediate(STWd, r0, s0, StateCinematicStartTick);
 	assembler.callPool(soundInitPoolId); // official Mophun PCM/ADPCM sound API
 	assembler.pool(LDI, p0, zero, turboWavePoolId);
@@ -569,7 +559,7 @@ PipProgram buildGuestCode(uint32_t originalUpdatePoolId,
 
 	assembler.label("TurboActive");
 	assembler.label("TurboApplyBoost");
-	assembler.immediate(LDWd, p0, s1, CarTargetSpeed);
+	assembler.immediate(LDWd, p0, s1, carTargetSpeed);
 	assembler.immediate(LDI, p1, zero, 40000);
 	assembler.branch(BLT, p0, p1, "BoostTimer");
 	assembler.op(MULQ, p0, p0, 7);
@@ -578,7 +568,7 @@ PipProgram buildGuestCode(uint32_t originalUpdatePoolId,
 	assembler.branch(BLE, p0, p1, "StoreBoost");
 	assembler.op(MOV, p0, p1);
 	assembler.label("StoreBoost");
-	assembler.immediate(STWd, p0, s1, CarTargetSpeed);
+	assembler.immediate(STWd, p0, s1, carTargetSpeed);
 	assembler.label("BoostTimer");
 	assembler.immediate(LDWd, s4, s0, StateActiveFrames);
 	assembler.op(ADDQ, s4, s4, static_cast<uint8_t>(-1));
@@ -592,7 +582,7 @@ PipProgram buildGuestCode(uint32_t originalUpdatePoolId,
 
 	assembler.label("TurboFinish");
 	assembler.immediate(STWd, s2, s0, StatePreviousKeys);
-	assembler.immediate(LDWd, r0, s1, CarSpeed);
+	assembler.immediate(LDWd, r0, s1, carSpeed);
 	assembler.immediate(STWd, r0, s0, StatePreviousSpeed);
 	assembler.op(RET, s7, s6);
 
@@ -627,7 +617,7 @@ PipProgram buildGuestCode(uint32_t originalUpdatePoolId,
 	assembler.label("TurboDrawCinematic");
 	assembler.op(STORE, ra, s6);
 	assembler.pool(LDI, s0, zero, turboStatePoolId);
-	assembler.callPool(14); // vGetTickCount
+	assembler.callPool(getTickCountPoolId);
 	assembler.immediate(LDWd, s1, s0, StateCinematicStartTick);
 	assembler.op(SUB, s2, r0, s1); // elapsed milliseconds
 	assembler.op(MULQ, s3, s2, CinematicFrameRate);
@@ -641,7 +631,7 @@ PipProgram buildGuestCode(uint32_t originalUpdatePoolId,
 	assembler.ldq(p1, 0);
 	assembler.ldq(p2, 127);
 	assembler.ldq(p3, 159);
-	assembler.callPool(23); // vSetClipWindow
+	assembler.callPool(setClipWindowPoolId);
 
 	assembler.pool(LDI, s4, zero, cinematicPoolId);
 	assembler.op(MULQ, s5, s3, 4);
@@ -662,7 +652,7 @@ PipProgram buildGuestCode(uint32_t originalUpdatePoolId,
 		assembler.immediate(STHd, r0, s0, StatePolygon + coordinate * 2);
 	}
 	assembler.immediate(ADDi, p0, s0, StatePolygon);
-	assembler.callPool(5); // vDrawFlatPolygon
+	assembler.callPool(drawFlatPolygonPoolId);
 	assembler.op(ADDQ, s5, s5, 6);
 	assembler.jump("CinematicCommand");
 
@@ -678,7 +668,7 @@ PipProgram buildGuestCode(uint32_t originalUpdatePoolId,
 	assembler.immediate(LDBUd, p2, s5, 2);
 	assembler.immediate(LDBUd, p3, s5, 3);
 	assembler.op(ADDQ, s5, s5, 4);
-	assembler.callPool(8); // vFillRect
+	assembler.callPool(fillRectPoolId);
 	assembler.jump("CinematicCommand");
 
 	assembler.label("CinematicFrameDone");
@@ -686,7 +676,7 @@ PipProgram buildGuestCode(uint32_t originalUpdatePoolId,
 	assembler.branch(BLT, s2, p0, "CinematicReturn");
 	assembler.ldq(r0, 2);
 	assembler.immediate(STWd, r0, s0, StatePhase);
-	assembler.ldq(r0, BoostFrameCount); // eight seconds at V-Rally's 15 Hz race update
+	assembler.ldq(r0, boostFrameCount);
 	assembler.immediate(STWd, r0, s0, StateActiveFrames);
 	assembler.label("CinematicReturn");
 	assembler.op(RET, s7, s6);
@@ -705,7 +695,7 @@ PipProgram buildGuestCode(uint32_t originalUpdatePoolId,
 	assembler.ldq(p1, 0);
 	assembler.ldq(p2, 127);
 	assembler.ldq(p3, 159);
-	assembler.callPool(23); // vSetClipWindow
+	assembler.callPool(setClipWindowPoolId);
 
 	// The active effect pass is entirely guest-driven. vCopyRect is the standard
 	// Mophun screen-copy API: alternating source/destination offsets produce the
@@ -754,9 +744,10 @@ PipProgram buildGuestCode(uint32_t originalUpdatePoolId,
 	assembler.callPool(copyRectPoolId); // vCopyRect(screen -> screen)
 
 	// Two alternating, layered exhaust flames. V-Rally renders the player car at
-	// y=147-CarJumpHeight, so apply the same displacement to every flame vertex.
+	// y=147 minus the target's car jump height, so apply the same displacement
+	// to every flame vertex.
 	assembler.immediate(LDWd, r0, s0, StateCar);
-	assembler.immediate(LDHUd, s2, r0, CarJumpHeight);
+	assembler.immediate(LDHUd, s2, r0, carJumpHeight);
 	assembler.immediate(ANDi, r0, s1, 1);
 	assembler.branchImmediate(BEQI, r0, 0, "BoostFlameEvenJump");
 	assembler.jump("BoostFlameOdd");
@@ -802,7 +793,7 @@ PipProgram buildGuestCode(uint32_t originalUpdatePoolId,
 	assembler.ldq(p1, 136);
 	assembler.ldq(p2, 127);
 	assembler.ldq(p3, 145);
-	assembler.callPool(8); // vFillRect
+	assembler.callPool(fillRectPoolId);
 
 	assembler.ldq(p0, 0); // black
 	assembler.call("TurboSetColor");
@@ -810,7 +801,7 @@ PipProgram buildGuestCode(uint32_t originalUpdatePoolId,
 	assembler.ldq(p1, 137);
 	assembler.ldq(p2, 126);
 	assembler.ldq(p3, 144);
-	assembler.callPool(8);
+	assembler.callPool(fillRectPoolId);
 
 	assembler.immediate(LDWd, s1, s0, StatePhase);
 	assembler.branchImmediate(BEQI, s1, 2, "HudActive");
@@ -828,7 +819,7 @@ PipProgram buildGuestCode(uint32_t originalUpdatePoolId,
 	assembler.label("HudActive");
 	assembler.immediate(LDWd, s2, s0, StateActiveFrames);
 	assembler.op(MULQ, s2, s2, 30);
-	assembler.immediate(DIVi, s2, s2, 120);
+	assembler.immediate(DIVi, s2, s2, boostFrameCount);
 	assembler.ldq(p0, 0x7fe0); // yellow RGB555
 	assembler.label("HudColorReady");
 	assembler.branchImmediate(BLEI, s2, 0, "HudReturn");
@@ -837,7 +828,7 @@ PipProgram buildGuestCode(uint32_t originalUpdatePoolId,
 	assembler.ldq(p0, 95);
 	assembler.ldq(p1, 138);
 	assembler.ldq(p3, 143);
-	assembler.callPool(8);
+	assembler.callPool(fillRectPoolId);
 	assembler.label("HudReturn");
 	assembler.op(RET, s6, s5);
 
@@ -846,7 +837,7 @@ PipProgram buildGuestCode(uint32_t originalUpdatePoolId,
 	assembler.ldq(p1, 1);
 	assembler.op(SLLi, p1, p1, 31);
 	assembler.op(OR, p0, p0, p1);
-	assembler.callPool(24); // vSetForeColor
+	assembler.callPool(setForeColorPoolId);
 	assembler.op(RET, zero, sp);
 
 	return assembler.finish();
@@ -855,33 +846,31 @@ PipProgram buildGuestCode(uint32_t originalUpdatePoolId,
 std::vector<uint8_t> buildModdedMpn(std::vector<uint8_t> input,
 	const std::vector<uint8_t>& turboWave)
 {
+	const MpnImage sourceImage = MpnImage::parse(input);
+	const TargetDetection detection = builtInTargets().detect(sourceImage);
+	if (detection.compatibility != TargetCompatibility::Compatible ||
+		detection.profile == nullptr)
+		throw std::runtime_error(detection.message);
+	if (detection.profile->id() != "vrally2-rc14eu-m5")
+		throw std::runtime_error("Turbo mod does not support detected target '" +
+			detection.profile->id() + "'");
+
 	const double waveDuration = validateTurboWave(turboWave);
 	std::vector<uint8_t> fadedTurboWave = turboWave;
 	applyTurboMusicFade(fadedTurboWave);
-	const MpnImage sourceImage = MpnImage::parse(input);
-	const MpnHeader header = sourceImage.header();
-	requireTargetHeader(header);
 	const VMGPHeader encryptedHeader = decodeVMGPHeader(input.data());
 	std::string decryptError;
 	if (!decryptCommercialCode(input, encryptedHeader, decryptError))
 		throw std::runtime_error("Unable to decrypt the commercial code: " + decryptError);
-	PatchBuilder patch(MpnImage::parse(input));
-
-	const uint8_t expectedUpdateStart[] = {STORE, ra, s2, 0};
-	if (!std::equal(expectedUpdateStart, expectedUpdateStart + sizeof(expectedUpdateStart),
-		input.begin() + sizeof(VMGPHeader) + CarUpdateCodeOffset))
-		throw std::runtime_error("Car update signature does not match the supported executable");
-
-	const PoolEntry flipItem = patch.poolEntry(FlipScreenPoolId);
-	const PoolEntry updateItem = patch.poolEntry(CarUpdatePoolId);
-	if (flipItem.type != 0x02 || (updateItem.type >> 4) != 1 ||
-		updateItem.value != CarUpdateCodeOffset)
-		throw std::runtime_error("V-Rally hook address table entries do not match");
+	MpnImage decryptedImage = MpnImage::parse(input);
+	const ResolvedTarget target = detection.profile->resolve(decryptedImage);
+	const MpnHeader header = decryptedImage.header();
+	PatchBuilder patch(std::move(decryptedImage));
 
 	// Hook reservations preserve callable originals immediately, while binding the
 	// wrapper address is deferred until the assembled program has been allocated.
-	const CodeHook updateHook = patch.reserveCodeHook(CarUpdatePoolId);
-	const CodeHook flipHook = patch.reserveCodeHook(FlipScreenPoolId);
+	const CodeHook updateHook = patch.reserveCodeHook(target.pool("game.car.update"));
+	const CodeHook flipHook = patch.reserveCodeHook(target.pool("os.graphics.flip_screen"));
 	const SectionAllocation turboState = patch.allocateBss(TurboStateSize, 4);
 	const PoolId turboStatePoolId = patch.addReference(turboState);
 
@@ -900,7 +889,7 @@ std::vector<uint8_t> buildModdedMpn(std::vector<uint8_t> input,
 	const PoolId copyRectPoolId = patch.importSyscall("vCopyRect");
 
 	Assembler assembler(patch.nextCodeOffset(4));
-	const PipProgram guestProgram = buildGuestCode(updateHook.originalPoolId(),
+	const PipProgram guestProgram = buildGuestCode(target, updateHook.originalPoolId(),
 		flipHook.originalPoolId(), turboStatePoolId, turboWavePoolId, cinematicPoolId,
 		soundInitPoolId, soundGetHandlePoolId, soundCtrlExPoolId, soundCtrlPoolId,
 		copyRectPoolId, assembler);
@@ -909,8 +898,11 @@ std::vector<uint8_t> buildModdedMpn(std::vector<uint8_t> input,
 		throw std::runtime_error("Unexpected padding before the Turbo guest code");
 	patch.bindCodeHook(updateHook, guestProgram.symbolOffset("TurboCarUpdateWrapper"));
 	patch.bindCodeHook(flipHook, guestProgram.symbolOffset("TurboFlipWrapper"));
+	patch.markModified(target.profile().id(), "vrally2-turbo");
 
 	const std::vector<uint8_t> output = patch.serialize();
+	std::cout << "Selected target: " << target.profile().displayName() << " ("
+		<< target.profile().id() << ")\n";
 	std::cout << "Embedded native cinematic: " << CinematicFrameCount << " frames at "
 		<< CinematicFrameRate << " FPS (" << cinematic.size() << " bytes), PCM WAVE "
 		<< fadedTurboWave.size() << " bytes / " << waveDuration

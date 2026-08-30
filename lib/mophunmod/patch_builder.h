@@ -72,6 +72,7 @@ class PatchBuilder {
 
 		uint32_t allocateString(const std::string& value);
 		uint32_t internString(const std::string& value);
+		void markModified(const std::string& targetId, const std::string& modId);
 		PoolId addPoolEntry(const PoolEntry& entry);
 		PoolId addReference(const SectionAllocation& allocation);
 		PoolId findImportedSyscall(const std::string& name) const;

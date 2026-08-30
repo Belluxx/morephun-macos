@@ -95,8 +95,11 @@ On Linux, add `-DMOPHUN_REQUIRE_FLUIDSYNTH=ON` to the first command if you want 
 `VRally2TurboMod` patches the RC14EU M5 executable itself. The charge logic,
 HUD, 19.28-second low-poly 3D cinematic, soundtrack, race pause, and boost all
 execute from the patched cartridge; the emulator has no turbo-specific runtime
-hooks. The cinematic shows the car and cockpit, a pilot close-up with an animated
-smirk, and the hand opening the safety cover and pressing the turbo button. The
+hooks. The patcher selects the `vrally2-rc14eu-m5` target profile, resolves Mophun
+OS calls by import name, and validates the release-specific hook and code signature
+before modifying anything. The cinematic shows the car and cockpit, a pilot
+close-up with an animated smirk, and the hand opening the safety cover and pressing
+the turbo button. The
 soundtrack continues through the complete eight-second boost and stops with it.
 The patcher applies a one-second fade-out at the end of the embedded recording.
 
@@ -109,6 +112,11 @@ build/dev/VRally2TurboMod \
 build/dev/MoRePhun '/path/to/VRally2_Turbo_[RC14EU]_M5.mpn'
 ```
 
+Run `build/dev/MPNInspect game.mpn` to see the detected target, compatibility
+status, and every typed symbol resolved from its profile. Generated Turbo files
+carry a small target/mod marker, so inspection and reapplication report that they
+were previously modified instead of treating them as an unknown release.
+
 Drive fast and clean to fill the cyan-framed meter. A full white meter is
 ready; press Space to play the native activation sequence, then the yellow
 meter counts down the active boost. During boost, layered exhaust flames flicker
@@ -120,6 +128,15 @@ Mophun's `vSoundGetHandle`/`vSoundCtrlEx` API. Handle-based WAVE playback remain
 `vPlayResource`, allowing V-Rally's effects to sound without interrupting the
 turbo track. The shake uses Mophun's standard `vCopyRect` screen-copy API; neither
 effect relies on a turbo-specific host hook.
+
+## Modding targets
+
+Target descriptions use the public `mophunmod::TargetProfile` API in
+`lib/mophunmod/target.h`. Built-in profiles are registered by
+`mophunmod::builtInTargets()`; `target_vrally2.cpp` demonstrates exact release
+fingerprints, import-discovered pool entries, typed offsets and constants, and
+plaintext code signatures. Tools may also construct a separate `TargetCatalog`
+to support another game without changing the patching machinery.
 
 ## Credits
 
