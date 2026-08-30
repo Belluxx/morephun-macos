@@ -2,47 +2,48 @@
 
 ## Goal
 
-Replace V-Rally-specific constants with explicit, verifiable target profiles and
-named symbol resolution.
+Make the modding library less dependent on V-Rally-specific constants by
+introducing target descriptions and more meaningful symbol resolution.
 
 ## Scope
 
-- Define a versioned target-profile format containing:
-  - target ID and supported runtime ABI;
-  - original-file SHA-256 fingerprints;
-  - expected MPN section properties;
-  - named syscall imports;
-  - named game functions, structures, and field offsets;
-  - hook signatures and validation rules.
-- Resolve syscalls by their string-table names instead of fixed pool IDs.
-- Resolve game functions through profile symbols and verified byte signatures.
-- Require every signature to have exactly one valid match.
-- Add an injection marker containing runtime version, target ID, and patch ID so
-  already-patched or incompatible files are rejected clearly.
-- Extend inspection tooling to report the detected target and resolved symbols.
-- Move all V-Rally values such as car update, flip hook, and car fields into an
-  `vrally2-rc14eu-m5` profile.
+- Introduce a practical way to describe supported game targets and the symbols
+  or metadata needed to modify them.
+- Move V-Rally-specific IDs, offsets, and related knowledge out of the generic
+  patching code and into a target-specific definition.
+- Prefer named or discoverable symbols over fixed IDs and offsets where that
+  improves clarity and portability.
+- Provide enough target detection and compatibility handling to avoid applying
+  a mod to an obviously unsuitable input.
+- Improve inspection tooling so developers can understand the selected target
+  and the symbols used during patching.
+- Consider a lightweight way to recognize previously modified files if it fits
+  naturally with the chosen design.
 
-## Proposed Interface
+The exact profile format, matching strategy, command-line interface, and amount
+of validation are implementation choices. They should fit the existing library
+and remain easy to extend for future games or releases.
+
+## Example Workflow
 
 ```text
 mophun-mod inspect game.mpn
-mophun-mod verify game.mpn --target vrally2-rc14eu-m5
 mophun-mod inject game.mpn output.mpn --target vrally2-rc14eu-m5
 ```
 
+These commands are illustrative rather than a required interface.
+
 ## Deliverables
 
-- Target-profile model, parser, validator, and resolver in `libmophunmod`.
-- The first V-Rally 2 RC14EU M5 profile.
-- Inspection and verification commands with actionable errors.
-- Tests for exact matches, wrong releases, ambiguous signatures, changed imports,
-  corrupt profiles, and already-patched inputs.
+- Target-aware symbol or metadata support in `libmophunmod`.
+- A target definition for the currently supported V-Rally 2 release.
+- Useful inspection support and understandable failure messages.
+- Tests covering the main behavior of the chosen design.
 
 ## Completion Criteria
 
-- The Turbo patcher contains no raw V-Rally pool IDs, code offsets, or structure
-  offsets outside its selected profile.
-- Unsupported releases are rejected before any output is written.
-- Profile and symbol resolution is deterministic across builds.
-- The supported V-Rally input still produces the Phase 1 golden output.
+- Game-specific values are reasonably isolated from the reusable patching code.
+- The existing V-Rally mod continues to work with the new target-aware approach.
+- Clearly incompatible inputs fail safely.
+- The resulting design provides a useful foundation for adding another target
+  without prescribing how every future target must be represented.
