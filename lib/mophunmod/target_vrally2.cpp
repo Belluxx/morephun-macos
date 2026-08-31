@@ -29,6 +29,10 @@ TargetProfile makeVrally2Rc14EuM5Target()
 			TargetSymbol::importedPool("os.graphics.set_clip_window", "vSetClipWindow"),
 			TargetSymbol::importedPool("os.graphics.set_fore_color", "vSetForeColor"),
 
+			TargetSymbol::importedPool("os.graphics.draw_object", "vDrawObject"),
+			TargetSymbol::importedPool("os.graphics.set_palette_entry", "vSetPaletteEntry"),
+			TargetSymbol::importedPool("os.system.get_random", "vGetRandom"),
+
 			// V-Rally internals have no import names, so the profile gives them stable
 			// semantic names and validates their expected entry/signature.
 			TargetSymbol::fixedPool("game.car.update", 185,
@@ -39,7 +43,25 @@ TargetProfile makeVrally2Rc14EuM5Target()
 			TargetSymbol::constant("game.car.target_speed_offset", 0x24),
 			TargetSymbol::constant("game.car.speed_offset", 0x28),
 			TargetSymbol::constant("game.car.jump_height_offset", 0xac),
-			TargetSymbol::constant("game.race_update_hz", 15)
+			TargetSymbol::constant("game.race_update_hz", 15),
+
+			// Rival traffic recovered from the race renderer and updater: an array of
+			// 28-byte entries {lane 16.16, distance 16.16, fraction, segment, relative
+			// segment} directly after the player car, moved every racing frame by
+			// (71500000 / speedDivisor) - 5000 * index units.
+			TargetSymbol::bssOffset("game.car", 0xb0a0),
+			TargetSymbol::bssOffset("game.track.length", 0xaf50),
+			TargetSymbol::bssOffset("game.race.speed_divisor", 0xa90c),
+			TargetSymbol::constant("game.car.segment_offset", 0x14),
+			TargetSymbol::constant("game.car.road_lane_offset", 0x20),
+			TargetSymbol::constant("game.car.opponent_count_offset", 0xb4),
+			TargetSymbol::constant("game.car.opponents_offset", 0xb8),
+			TargetSymbol::constant("game.opponent.stride", 28),
+			TargetSymbol::constant("game.opponent.speed_step", 5000),
+			TargetSymbol::constant("game.opponent.base_speed_dividend", 71500000),
+			TargetSymbol::constant("game.opponent.palette_index", 197),
+			TargetSymbol::fixedPool("game.opponent.colors", 110,
+				PoolEntry::data(0x864))
 		});
 }
 

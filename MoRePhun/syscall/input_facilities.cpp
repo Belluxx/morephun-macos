@@ -16,7 +16,9 @@ void MophunOS::vGetButtonData()
     if (keystate[input->keys[KEYRIGHT]] || keystate[SDL_SCANCODE_D])
         pressedKeys += KEY_RIGHT;
     if (keystate[input->keys[KEYFIRE]])         pressedKeys += KEY_FIRE;
-    if (keystate[input->keys[KEYFIRE2]])        pressedKeys += KEY_FIRE2;
+    // B is a secondary-fire alias so action mods can document a dedicated key.
+    if (keystate[input->keys[KEYFIRE2]] || keystate[SDL_SCANCODE_B])
+        pressedKeys += KEY_FIRE2;
     // V-Rally treats the phone's center/5 action as Fire. The Sony Ericsson
     // implementation code 0xD6 is not a bit flag and would also set Down.
     if (keystate[input->keys[KEYSELECT]])       pressedKeys |= KEY_FIRE;

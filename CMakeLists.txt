@@ -214,6 +214,12 @@ add_executable(VRally2TurboMod
 target_include_directories(VRally2TurboMod PRIVATE MoRePhun)
 target_link_libraries(VRally2TurboMod PRIVATE mophunmod ${MOPHUN_SDL_TARGET})
 
+add_executable(VRally2BazookaMod
+	tools/vrally2_bazooka_mod.cpp
+	MoRePhun/rom_decrypt.cpp)
+target_include_directories(VRally2BazookaMod PRIVATE MoRePhun)
+target_link_libraries(VRally2BazookaMod PRIVATE mophunmod)
+
 if(BUILD_TESTING)
 	if(TARGET VRally2Standalone)
 		add_test(NAME VRally2StandaloneHelp COMMAND VRally2Standalone --help)
